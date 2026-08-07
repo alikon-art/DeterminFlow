@@ -2,13 +2,16 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+import json
 import logging
+import re
 import time
+from datetime import datetime, timezone
 from typing import Any
 
 from src.agent.session import AgentSession
-from src.config import SESSIONS_DIR
+from src.agent.session_catalog import SessionMetadata
+from src.config import SESSIONS_DIR, WORKFLOWS_DIR
 from src.core.utils import is_visible_to_frontend
 
 logger = logging.getLogger(__name__)
@@ -16,6 +19,8 @@ logger = logging.getLogger(__name__)
 _ACTIVE_SUB_STATUSES = {"running", "streaming"}
 _SUB_TERMINAL_STATUSES = {"completed", "error", "stopped", "cancelled"}
 _SUB_RESULT_MAX_CHARS = 20_000
+_TASK_TERMINAL_STATUSES = {"completed", "failed", "stopped", "cancelled"}
+_SAFE_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 
 def _try_emit_event(event: dict) -> None:
@@ -143,10 +148,21 @@ class SessionLifecycleMixin:
         )
 
     def get_main_session_summaries(self) -> list[dict]:
-        return [
-            summary for summary in self.get_session_summaries()
-            if summary.get("type") == "main"
-        ]
+        summaries = {
+            metadata.session_id: metadata.to_summary()
+            for metadata in self._session_catalog.values()
+            if metadata.session_type == "main"
+        }
+        summaries.update({
+            session_id: session.get_summary()
+            for session_id, session in self.sessions.items()
+            if session.session_type == "main"
+        })
+        return sorted(
+            summaries.values(),
+            key=lambda item: (item.get("updated_at", ""), item["session_id"]),
+            reverse=True,
+        )
 
     def get_total_session_count(self) -> int:
         return len({
@@ -521,6 +537,7 @@ class SessionLifecycleMixin:
 
     def load_sessions(self):
         scan_result = self._session_catalog.scan(SESSIONS_DIR)
+        prune_result = self._prune_terminal_workflow_history()
         hot_metadata = [
             metadata for metadata in self._session_catalog.values()
             if metadata.session_type == "main"
@@ -548,12 +565,76 @@ class SessionLifecycleMixin:
             except Exception as exc:
                 logger.error("加载 session %s 失败: %s", metadata.session_id, exc)
         logger.info(
-            "Session 目录索引完成: total=%s hot=%s errors=%s cache_limit=%s",
+            "Session 目录索引完成: scanned=%s total=%s hot=%s errors=%s cache_limit=%s "
+            "history_limit=%s pruned=%s freed_bytes=%s",
             scan_result["scanned"],
+            self.get_total_session_count(),
             len(self.sessions),
-            scan_result["errors"],
+            scan_result["errors"] + prune_result["errors"],
             self._cold_cache_max_entries,
+            self._history_max_entries,
+            len(prune_result["deleted"]),
+            prune_result["deleted_bytes"],
         )
+
+    @staticmethod
+    def _task_allows_history_prune(metadata: SessionMetadata) -> bool:
+        workflow_id = metadata.workflow_id
+        task_id = metadata.task_id
+        if not workflow_id or not task_id:
+            return True
+        if (
+            not _SAFE_ID_PATTERN.fullmatch(workflow_id)
+            or not _SAFE_ID_PATTERN.fullmatch(task_id)
+        ):
+            logger.warning(
+                "Session 关联了非法 TaskRef，跳过历史清理: session=%s workflow=%r task=%r",
+                metadata.session_id,
+                workflow_id,
+                task_id,
+            )
+            return False
+        task_file = WORKFLOWS_DIR / workflow_id / "tasks" / f"{task_id}.json"
+        try:
+            task_data = json.loads(task_file.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return True
+        except (OSError, UnicodeError, TypeError, ValueError) as exc:
+            logger.warning(
+                "无法确认 Session 关联 Task 终态，跳过历史清理: session=%s task=%s error=%s",
+                metadata.session_id,
+                task_id,
+                exc,
+            )
+            return False
+        if not isinstance(task_data, dict):
+            logger.warning(
+                "Session 关联 Task 文件不是对象，跳过历史清理: session=%s task=%s",
+                metadata.session_id,
+                task_id,
+            )
+            return False
+        return task_data.get("status") in _TASK_TERMINAL_STATUSES
+
+    def _prune_terminal_workflow_history(self) -> dict[str, Any]:
+        result = self._session_catalog.prune_terminal_workflow_history(
+            SESSIONS_DIR,
+            max_entries=self._history_max_entries,
+            protected_session_ids=self.sessions,
+            can_delete=self._task_allows_history_prune,
+        )
+        if result["deleted"]:
+            from src.web.event_bus import event_bus
+
+            for session_id in result["deleted"]:
+                event_bus.clear_session(session_id)
+            logger.info(
+                "Workflow Session 历史已裁剪: deleted=%s freed_bytes=%s limit=%s",
+                len(result["deleted"]),
+                result["deleted_bytes"],
+                self._history_max_entries,
+            )
+        return result
 
     async def release_workflow_task_sessions(
         self,
@@ -574,6 +655,7 @@ class SessionLifecycleMixin:
                 released += 1
             else:
                 retained += 1
+        self._prune_terminal_workflow_history()
         return {"matched": len(candidates), "released": released, "retained": retained}
 
     async def _release_runtime_session(self, session_id: str) -> bool:
@@ -616,6 +698,9 @@ class SessionLifecycleMixin:
         self._cold_session_lru.pop(session_id, None)
         self._sub_tasks.pop(session_id, None)
         _persistence_manager.unregister(session_id)
+        from src.web.event_bus import event_bus
+
+        event_bus.clear_session(session_id)
 
     async def shutdown(self):
         from src.agent.session import _persistence_manager

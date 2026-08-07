@@ -9,11 +9,12 @@ import asyncio
 from collections import OrderedDict
 import logging
 from datetime import datetime, timezone
-from typing import Callable, Awaitable
+from typing import Awaitable, Callable
 
 from src.config import (
     MAX_SUB_SESSIONS,
     SESSION_CACHE_MAX_ENTRIES,
+    SESSION_HISTORY_MAX_ENTRIES,
     SUB_AGENT_MAX_ROUNDS,
 )
 from src.agent.session import AgentSession
@@ -83,7 +84,11 @@ class SessionManager(SessionLifecycleMixin):
     不再承担 Graph 执行和消息累积的职责，这些已下沉到 AgentSession。
     """
 
-    def __init__(self, cold_cache_max_entries: int | None = None):
+    def __init__(
+        self,
+        cold_cache_max_entries: int | None = None,
+        history_max_entries: int | None = None,
+    ):
         self.sessions: dict[str, AgentSession] = {}
         self._session_catalog = SessionCatalog()
         self._cold_session_lru: OrderedDict[str, None] = OrderedDict()
@@ -92,6 +97,12 @@ class SessionManager(SessionLifecycleMixin):
             cold_cache_max_entries
             if cold_cache_max_entries is not None
             else SESSION_CACHE_MAX_ENTRIES,
+        )
+        self._history_max_entries = max(
+            0,
+            history_max_entries
+            if history_max_entries is not None
+            else SESSION_HISTORY_MAX_ENTRIES,
         )
         self.main_session_id: str | None = None
         self.notification_queue: asyncio.Queue = asyncio.Queue()  # 兼容旧接口（已被 broadcaster 取代）

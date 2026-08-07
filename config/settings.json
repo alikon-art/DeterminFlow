@@ -18,6 +18,7 @@
   "agent": {
     "MAX_SUB_SESSIONS": 50,
     "SUB_AGENT_MAX_ROUNDS": 10,
+    "SESSION_HISTORY_MAX_ENTRIES": 1000,
     "AGENT_MESSAGE_HEADER": "[来自 {source_type} {source_id} 的消息{task_info}]"
   },
   "roundtable": {

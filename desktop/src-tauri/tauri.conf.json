@@ -1,25 +1,12 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "DeterminFlow",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "identifier": "io.determinflow.desktop",
   "build": {
     "frontendDist": "../ui"
   },
   "app": {
-    "windows": [
-      {
-        "label": "main",
-        "title": "DeterminFlow",
-        "url": "index.html",
-        "width": 1440,
-        "height": 920,
-        "minWidth": 1024,
-        "minHeight": 700,
-        "center": true,
-        "resizable": true
-      }
-    ],
     "security": {
       "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'"
     }

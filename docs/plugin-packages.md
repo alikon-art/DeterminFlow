@@ -48,8 +48,9 @@ subdirectory = "plugins/example-plugin"
 Core 通过 `config/plugin-sources.json` 中的官方 Git 地址按需读取该索引，并在插件
 页面提供快捷安装入口；索引只负责发现，安装仍会重新预检清单并锁定精确 commit。
 官方来源可以配置 `mirrors` 镜像地址数组。Core 会并行探测主地址与镜像：主地址可达时
-只在返回同一 commit 的地址中选择响应最快者，避免镜像尚未同步时安装旧版本；主地址
-不可达时使用最快的可用镜像。Plugin 锁仍记录主地址，镜像只作为传输通道。
+只允许返回同一 commit 的镜像参与传输，并按 `mirrors` 配置顺序优先使用镜像，避免镜像
+尚未同步时安装旧版本；首选镜像不可用时再回退其他镜像或主地址。Plugin 锁仍记录主地址，
+镜像只作为传输通道。
 未提供索引的仓库仍可通过 Plugin ID、Git URL、ref 和 subdirectory 手工安装。
 官方来源在主进程启动时完成 canonicalization（规范化）并冻结；运行中修改来源文件
 不会改变信任判断或 Catalog 响应。Catalog 使用 TTL cache（有效期缓存）和

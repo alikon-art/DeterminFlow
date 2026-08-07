@@ -33,7 +33,10 @@ RUN pip install --no-cache-dir -r requirements.lock
 # 复制后端源码
 COPY src/ ./src/
 COPY config/ ./config/
+COPY scripts/docker-entrypoint.sh /app/scripts/docker-entrypoint.sh
 COPY run.py ./
+
+RUN chmod 0755 /app/scripts/docker-entrypoint.sh
 
 # Core image excludes optional extension packages, but keeps Git-backed Plugin
 # management available. Desired enable state comes from the writable config mount.
@@ -61,6 +64,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
 # 生产启动：Gunicorn + UvicornWorker
 # --workers 1：项目有状态初始化（MCP/Session/Graph），不支持多 worker
 # --timeout 600：Agent 工作流节点最长可执行 10 分钟
+ENTRYPOINT ["/app/scripts/docker-entrypoint.sh"]
 CMD ["gunicorn", "src.web_server:app", \
      "--worker-class", "uvicorn.workers.UvicornWorker", \
      "--bind", "0.0.0.0:8020", \

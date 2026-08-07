@@ -27,6 +27,21 @@ export function calculateDownloadProgress(
   return Math.min(100, Math.max(0, Math.round((downloadedBytes / totalBytes) * 100)));
 }
 
+export async function downloadUpdateWithFallback<T>(
+  primary: T,
+  fallback: T | null,
+  download: (resource: T, attempt: "primary" | "fallback") => Promise<void>,
+): Promise<T> {
+  try {
+    await download(primary, "primary");
+    return primary;
+  } catch (primaryError) {
+    if (!fallback) throw primaryError;
+    await download(fallback, "fallback");
+    return fallback;
+  }
+}
+
 export function describeUpdateError(error: unknown): string {
   const detail = error instanceof Error ? error.message : String(error ?? "");
   if (/404|not found/i.test(detail)) {

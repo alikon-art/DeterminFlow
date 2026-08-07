@@ -18,6 +18,9 @@ def test_example_model_config_uses_one_api_key_field() -> None:
     )
 
     assert document["providers"]["deepseek"]["api_key"] == "${DEEPSEEK_API_KEY}"
+    assert document["providers"]["deepseek"]["base_url"] == (
+        "https://api.deepseek.com/v1"
+    )
     assert document["providers"]["deepseek"]["maxContextTokens"] == 128000
     assert all(
         "api_key_env" not in provider
@@ -51,6 +54,75 @@ def test_provider_api_key_is_resolved_without_mutating_config(
 
     manager.update_provider("demo", {"name": "Renamed"})
     assert manager.get_provider("demo")["name"] == "Renamed"
+
+
+def test_provider_base_url_is_normalized_on_load(tmp_path: Path) -> None:
+    config_path = tmp_path / "models_config.json"
+    config_path.write_text(
+        json.dumps({
+            "providers": {
+                "demo": {
+                    "name": "Demo",
+                    "base_url": "  https://models.example.test/v1///  ",
+                    "models": [],
+                }
+            }
+        }),
+        encoding="utf-8",
+    )
+
+    manager = ModelManager(str(config_path))
+    persisted = json.loads(config_path.read_text(encoding="utf-8"))
+
+    assert manager.get_all_providers()["demo"]["base_url"] == (
+        "https://models.example.test/v1"
+    )
+    assert persisted["providers"]["demo"]["base_url"] == (
+        "https://models.example.test/v1"
+    )
+
+
+def test_provider_base_url_is_normalized_when_updated(tmp_path: Path) -> None:
+    config_path = tmp_path / "models_config.json"
+    config_path.write_text(
+        json.dumps({"providers": {"demo": {"base_url": "", "models": []}}}),
+        encoding="utf-8",
+    )
+    manager = ModelManager(str(config_path))
+
+    manager.update_provider("demo", {"base_url": "https://custom.example/v1/"})
+
+    assert manager.get_all_providers()["demo"]["base_url"] == (
+        "https://custom.example/v1"
+    )
+
+
+def test_provider_base_url_is_normalized_when_added(tmp_path: Path) -> None:
+    config_path = tmp_path / "models_config.json"
+    config_path.write_text(json.dumps({"providers": {}}), encoding="utf-8")
+    manager = ModelManager(str(config_path))
+
+    manager.add_provider(
+        "custom",
+        {"base_url": "https://custom.example/api/", "models": []},
+    )
+
+    assert manager.get_all_providers()["custom"]["base_url"] == (
+        "https://custom.example/api"
+    )
+
+
+def test_empty_provider_base_url_is_supported(tmp_path: Path) -> None:
+    config_path = tmp_path / "models_config.json"
+    config_path.write_text(
+        json.dumps({"providers": {"demo": {"base_url": "", "models": []}}}),
+        encoding="utf-8",
+    )
+    manager = ModelManager(str(config_path))
+
+    manager.update_provider("demo", {"base_url": None})
+
+    assert manager.get_all_providers()["demo"]["base_url"] == ""
 
 
 def test_provider_context_window_can_be_updated_and_persisted(tmp_path: Path) -> None:
@@ -281,6 +353,9 @@ def test_provider_templates_expose_reasoning_capabilities(tmp_path: Path) -> Non
 
     assert manager.get_provider_schema("openai")["default_base_url"] == (
         "https://api.openai.com/v1"
+    )
+    assert manager.get_provider_schema("deepseek")["default_base_url"] == (
+        "https://api.deepseek.com/v1"
     )
     assert manager.get_provider_capabilities("deepseek") == {
         "reasoning_efforts": ["low", "medium", "high", "max"],

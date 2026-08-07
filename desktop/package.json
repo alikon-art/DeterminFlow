@@ -1,8 +1,9 @@
 {
   "name": "determinflow-desktop",
   "private": true,
-  "version": "1.0.7",
+  "version": "1.0.8",
   "scripts": {
+    "test": "node --test ui/desktop-adapter.test.mjs",
     "tauri": "tauri",
     "build": "tauri build"
   },

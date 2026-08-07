@@ -19,6 +19,11 @@ logger = logging.getLogger(__name__)
 DEFAULT_MAX_CONTEXT_TOKENS = 128000
 _ENV_API_KEY_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
+
+def normalize_base_url(base_url: Any) -> str:
+    """规范化完整 API Base URL，不猜测或补充版本路径。"""
+    return str(base_url or "").strip().rstrip("/")
+
 # ============================================================
 # Provider Category 注册表 — 不同供应商的参数格式差异在此集中管理
 # ============================================================
@@ -94,7 +99,7 @@ PROVIDER_CATEGORIES: dict[str, dict] = {
 PROVIDER_SCHEMAS = {
     "deepseek": {
         "display_name": "DeepSeek",
-        "default_base_url": "https://api.deepseek.com",
+        "default_base_url": "https://api.deepseek.com/v1",
         "category": "ds",
         "reasoning_efforts": ["low", "medium", "high", "max"],
         "hyperparams": {
@@ -200,17 +205,34 @@ class ModelManager:
         if self.config_path.exists():
             with open(self.config_path, 'r', encoding='utf-8') as f:
                 self.config = json.load(f)
-            if self._migrate_legacy_api_key_fields():
+            migrated_api_keys = self._migrate_legacy_api_key_fields()
+            normalized_base_urls = self._normalize_provider_base_urls()
+            if migrated_api_keys or normalized_base_urls:
                 try:
                     self.save()
                 except OSError:
                     logger.warning(
-                        "模型配置只读，旧 api_key_env 仅在内存中迁移: %s",
+                        "模型配置只读，迁移和规范化仅在内存中生效: %s",
                         self.config_path,
                     )
             return self.config
 
         return self._create_default_config()
+
+    def _normalize_provider_base_urls(self) -> bool:
+        """移除已保存 Base URL 的空白和末尾斜杠。"""
+        changed = False
+        providers = self.config.get("providers", {})
+        if not isinstance(providers, dict):
+            return False
+        for provider in providers.values():
+            if not isinstance(provider, dict) or "base_url" not in provider:
+                continue
+            normalized = normalize_base_url(provider.get("base_url"))
+            if normalized != provider.get("base_url"):
+                provider["base_url"] = normalized
+                changed = True
+        return changed
 
     def _migrate_legacy_api_key_fields(self) -> bool:
         """把旧 api_key_env 合并进 api_key 的 ${ENV_VAR} 表达式。"""
@@ -287,6 +309,8 @@ class ModelManager:
         if provider_id not in self.config["providers"]:
             raise ValueError(f"Provider {provider_id} not found")
         filtered = {k: v for k, v in updates.items() if k in self._PROVIDER_UPDATE_KEYS}
+        if "base_url" in filtered:
+            filtered["base_url"] = normalize_base_url(filtered["base_url"])
         ignored = set(updates) - self._PROVIDER_UPDATE_KEYS
         if ignored:
             logger.warning(f"update_provider 忽略非白名单字段: {ignored} | provider={provider_id}")
@@ -297,6 +321,9 @@ class ModelManager:
         """添加新供应商"""
         if provider_id in self.config["providers"]:
             raise ValueError(f"Provider {provider_id} already exists")
+        config = dict(config)
+        if "base_url" in config:
+            config["base_url"] = normalize_base_url(config["base_url"])
         schema = self.get_provider_schema(provider_id) or {}
         config.setdefault("category", schema.get("category"))
         self.config["providers"][provider_id] = config

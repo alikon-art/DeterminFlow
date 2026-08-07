@@ -8,9 +8,11 @@ import pytest
 
 import src.agent.session as session_module
 import src.agent.session_lifecycle as session_lifecycle_module
+import src.agent.session_retention as session_retention_module
 import src.workflow.manager as workflow_manager_module
 from src.agent.session import AgentSession
 from src.agent.session_manager import SessionManager
+from src.web.event_bus import event_bus
 from src.workflow.definition import WorkflowDef
 from src.workflow.engine import WorkflowEngine
 from src.workflow.manager import WorkflowManager
@@ -29,6 +31,7 @@ def _write_session(
     task_description: str = "",
     runtime_scope: str | None = None,
     content: str = "result",
+    updated_at: str | None = None,
 ) -> None:
     data = {
         "session_id": session_id,
@@ -39,7 +42,7 @@ def _write_session(
         "system_prompt": "system",
         "agent_type": "main" if session_type == "main" else "writer",
         "created_at": "2026-08-04T00:00:00+00:00",
-        "updated_at": f"2026-08-04T00:00:{len(session_id):02d}+00:00",
+        "updated_at": updated_at or f"2026-08-04T00:00:{len(session_id):02d}+00:00",
         "record": [
             {"id": "msg_00001", "type": "user", "content": "input"},
             {"id": "msg_00002", "type": "assistant", "content": content},
@@ -56,6 +59,25 @@ def _write_session(
     sessions_dir.mkdir(parents=True, exist_ok=True)
     (sessions_dir / f"{session_id}.json").write_text(
         json.dumps(data, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+
+def _write_task(
+    workflows_dir: Path,
+    workflow_id: str,
+    task_id: str,
+    *,
+    status: str,
+) -> None:
+    task_file = workflows_dir / workflow_id / "tasks" / f"{task_id}.json"
+    task_file.parent.mkdir(parents=True, exist_ok=True)
+    task_file.write_text(
+        json.dumps({
+            "workflow_id": workflow_id,
+            "task_id": task_id,
+            "status": status,
+        }),
         encoding="utf-8",
     )
 
@@ -150,6 +172,146 @@ def test_historical_session_load_is_bounded_by_lru(isolated_sessions):
     assert list(manager._cold_session_lru) == ["cold-b", "cold-c"]
 
 
+def test_startup_caps_terminal_workflow_history_without_deleting_live_tasks(
+    isolated_sessions,
+    tmp_path,
+    monkeypatch,
+):
+    workflows_dir = tmp_path / "workflows"
+    monkeypatch.setattr(session_lifecycle_module, "WORKFLOWS_DIR", workflows_dir)
+    for index in range(3):
+        session_id = f"wf-terminal-{index}"
+        task_id = f"task-terminal-{index}"
+        _write_session(
+            isolated_sessions,
+            session_id,
+            session_type="sub",
+            status="completed",
+            workflow_id="wf-novel",
+            task_id=task_id,
+            runtime_scope="workflow",
+            updated_at=f"2026-08-04T00:00:0{index}+00:00",
+        )
+        _write_task(
+            workflows_dir,
+            "wf-novel",
+            task_id,
+            status="completed",
+        )
+
+    _write_session(
+        isolated_sessions,
+        "wf-live-task",
+        session_type="sub",
+        status="completed",
+        workflow_id="wf-novel",
+        task_id="task-live",
+        runtime_scope="workflow",
+        updated_at="2026-08-03T00:00:00+00:00",
+    )
+    _write_task(
+        workflows_dir,
+        "wf-novel",
+        "task-live",
+        status="running",
+    )
+    _write_session(
+        isolated_sessions,
+        "chat-main",
+        session_type="main",
+        runtime_scope="interactive",
+        updated_at="2026-08-02T00:00:00+00:00",
+    )
+    _write_session(
+        isolated_sessions,
+        "wf-recoverable-orphan",
+        session_type="main",
+        status="running",
+        workflow_id="wf-novel",
+        task_id="task-missing",
+        runtime_scope="workflow",
+        updated_at="2026-08-01T00:00:00+00:00",
+    )
+
+    manager = SessionManager(history_max_entries=2)
+    manager.load_sessions()
+
+    assert not (isolated_sessions / "wf-terminal-0.json").exists()
+    assert (isolated_sessions / "wf-terminal-1.json").exists()
+    assert (isolated_sessions / "wf-terminal-2.json").exists()
+    assert (isolated_sessions / "wf-live-task.json").exists()
+    assert (isolated_sessions / "chat-main.json").exists()
+    assert (isolated_sessions / "wf-recoverable-orphan.json").exists()
+    assert manager.get_total_session_count() == 5
+
+
+def test_main_summaries_do_not_materialize_every_catalog_entry(
+    isolated_sessions,
+    monkeypatch,
+):
+    _write_session(
+        isolated_sessions,
+        "chat-main",
+        session_type="main",
+        runtime_scope="interactive",
+    )
+    _write_session(
+        isolated_sessions,
+        "workflow-sub",
+        session_type="sub",
+        workflow_id="wf-novel",
+        task_id="task-old",
+        runtime_scope="workflow",
+    )
+    manager = SessionManager(history_max_entries=10)
+    manager.load_sessions()
+    monkeypatch.setattr(
+        manager,
+        "get_session_summaries",
+        lambda: (_ for _ in ()).throw(AssertionError("不得构造全量摘要")),
+    )
+
+    summaries = manager.get_main_session_summaries()
+
+    assert [summary["session_id"] for summary in summaries] == ["chat-main"]
+
+
+def test_prestart_retention_process_prunes_without_hydrating_sessions(
+    isolated_sessions,
+    monkeypatch,
+):
+    for index in range(2):
+        _write_session(
+            isolated_sessions,
+            f"wf-prestart-{index}",
+            session_type="sub",
+            status="completed",
+            workflow_id="wf-novel",
+            task_id=f"task-{index}",
+            runtime_scope="workflow",
+            updated_at=f"2026-08-04T00:00:0{index}+00:00",
+        )
+    monkeypatch.setattr(session_retention_module, "SESSIONS_DIR", isolated_sessions)
+    monkeypatch.setattr(session_lifecycle_module, "SESSIONS_DIR", isolated_sessions)
+    monkeypatch.setattr(
+        session_retention_module,
+        "SessionManager",
+        lambda: SessionManager(history_max_entries=1),
+    )
+    monkeypatch.setattr(
+        AgentSession,
+        "load",
+        lambda _session_id: (_ for _ in ()).throw(
+            AssertionError("启动前裁剪不得反序列化完整 Session")
+        ),
+    )
+
+    session_retention_module.main()
+
+    assert not (isolated_sessions / "wf-prestart-0.json").exists()
+    assert (isolated_sessions / "wf-prestart-1.json").exists()
+
+
 def test_dirty_historical_session_is_flushed_before_shutdown(isolated_sessions):
     _write_session(
         isolated_sessions,
@@ -208,6 +370,40 @@ def test_terminal_workflow_release_preserves_history_and_interactive_main(
     assert restored.get_last_assistant_message() == "chapter"
     assert restored.compiled_graph is None
     assert "chat-main" in manager.sessions
+
+
+def test_terminal_workflow_release_clears_event_bus_state(isolated_sessions):
+    _write_session(
+        isolated_sessions,
+        "wf-runtime-old",
+        session_type="sub",
+        status="completed",
+        workflow_id="wf-novel",
+        task_id="task-old",
+        runtime_scope="workflow",
+        updated_at="2026-08-03T00:00:00+00:00",
+    )
+    manager = SessionManager(history_max_entries=1)
+    manager.load_sessions()
+    workflow_session = AgentSession(
+        session_id="wf-runtime-event",
+        session_type="sub",
+        workflow_id="wf-novel",
+        task_id="task-1",
+        runtime_scope="workflow",
+    )
+    workflow_session.status = "completed"
+    manager.register_runtime_session(workflow_session)
+    event_bus._session_revisions[workflow_session.session_id] = 7
+
+    result = asyncio.run(
+        manager.release_workflow_task_sessions("wf-novel", "task-1")
+    )
+
+    assert result == {"matched": 1, "released": 1, "retained": 0}
+    assert event_bus.get_session_revision(workflow_session.session_id) == 0
+    assert not (isolated_sessions / "wf-runtime-old.json").exists()
+    assert (isolated_sessions / "wf-runtime-event.json").exists()
 
 
 def test_final_save_failure_retains_workflow_session(isolated_sessions, monkeypatch):

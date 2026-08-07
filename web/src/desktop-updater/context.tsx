@@ -5,6 +5,7 @@ import {
   DESKTOP_UPDATE_LAST_CHECK_KEY,
   calculateDownloadProgress,
   describeUpdateError,
+  downloadUpdateWithFallback,
   isDesktopRuntime,
   shouldAutoCheckForUpdate,
 } from "../lib/desktop-update";
@@ -17,6 +18,7 @@ import {
 
 interface UpdateMetadata {
   rid: number;
+  fallbackRid?: number;
   currentVersion: string;
   version: string;
   date?: string;
@@ -49,12 +51,16 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [noticeDismissed, setNoticeDismissed] = useState(false);
   const updateResource = useRef<Update | null>(null);
+  const fallbackUpdateResource = useRef<Update | null>(null);
   const checkInFlight = useRef(false);
 
-  const releaseUpdateResource = useCallback(async () => {
-    const resource = updateResource.current;
+  const releaseUpdateResources = useCallback(async () => {
+    const primary = updateResource.current;
+    const fallback = fallbackUpdateResource.current;
     updateResource.current = null;
-    if (resource) await resource.close().catch(() => undefined);
+    fallbackUpdateResource.current = null;
+    if (primary) await primary.close().catch(() => undefined);
+    if (fallback) await fallback.close().catch(() => undefined);
   }, []);
 
   const performCheck = useCallback(async (silent: boolean) => {
@@ -73,14 +79,18 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
       const installedVersion = await getVersion();
       setCurrentVersion(installedVersion);
       let availableUpdate: Update | null;
+      let fallbackUpdate: Update | null = null;
       try {
         const metadata = await invoke<UpdateMetadata | null>("check_update_sources");
         availableUpdate = metadata ? new Update(metadata) : null;
+        if (metadata?.fallbackRid !== undefined) {
+          fallbackUpdate = new Update({ ...metadata, rid: metadata.fallbackRid });
+        }
       } catch {
         availableUpdate = await check({ timeout: 15_000 });
       }
       rememberSuccessfulCheck();
-      await releaseUpdateResource();
+      await releaseUpdateResources();
 
       if (!availableUpdate) {
         setUpdate(null);
@@ -89,6 +99,7 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
       }
 
       updateResource.current = availableUpdate;
+      fallbackUpdateResource.current = fallbackUpdate;
       setUpdate({
         version: availableUpdate.version,
         date: availableUpdate.date,
@@ -107,7 +118,7 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
     } finally {
       checkInFlight.current = false;
     }
-  }, [enabled, releaseUpdateResource]);
+  }, [enabled, releaseUpdateResources]);
 
   const checkForUpdates = useCallback(
     () => performCheck(false),
@@ -116,6 +127,7 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
 
   const installUpdate = useCallback(async () => {
     const resource = updateResource.current;
+    const fallback = fallbackUpdateResource.current;
     if (!enabled || !resource) return;
 
     setPhase("downloading");
@@ -138,10 +150,30 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
     };
 
     try {
-      await resource.download(onDownloadEvent, { timeout: 10 * 60 * 1000 });
+      const downloadedResource = await downloadUpdateWithFallback(
+        resource,
+        fallback,
+        async (candidate, attempt) => {
+          if (attempt === "fallback") {
+            downloadedBytes = 0;
+            totalBytes = undefined;
+            setPhase("downloading");
+            setProgress(0);
+          }
+          await candidate.download(onDownloadEvent, { timeout: 10 * 60 * 1000 });
+        },
+      );
+      if (downloadedResource === fallback) {
+        await resource.close().catch(() => undefined);
+        updateResource.current = downloadedResource;
+        fallbackUpdateResource.current = null;
+      } else if (fallback) {
+        await fallback.close().catch(() => undefined);
+        fallbackUpdateResource.current = null;
+      }
       const { invoke } = await import("@tauri-apps/api/core");
       await invoke("prepare_for_update");
-      await resource.install();
+      await downloadedResource.install();
       const { relaunch } = await import("@tauri-apps/plugin-process");
       await relaunch();
     } catch (caught) {
@@ -165,8 +197,8 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
   }, [enabled, performCheck]);
 
   useEffect(() => () => {
-    void releaseUpdateResource();
-  }, [releaseUpdateResource]);
+    void releaseUpdateResources();
+  }, [releaseUpdateResources]);
 
   const value = useMemo<DesktopUpdateContextValue>(() => ({
     enabled,

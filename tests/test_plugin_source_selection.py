@@ -46,14 +46,14 @@ def test_probe_exact_commit_checks_advertised_refs(monkeypatch) -> None:
     assert probe.error == ""
 
 
-def test_selects_fastest_source_at_primary_commit(monkeypatch) -> None:
+def test_prefers_mirror_at_primary_commit_even_when_primary_is_faster(monkeypatch) -> None:
     commit = "a" * 40
     probes = {
         "https://github.example/plugins.git": _probe(
-            "https://github.example/plugins.git", commit, 0.4
+            "https://github.example/plugins.git", commit, 0.1
         ),
         "https://gitee.example/plugins.git": _probe(
-            "https://gitee.example/plugins.git", commit, 0.1
+            "https://gitee.example/plugins.git", commit, 0.4
         ),
     }
     monkeypatch.setattr(
@@ -88,6 +88,28 @@ def test_rejects_fast_mirror_when_primary_has_newer_commit(monkeypatch) -> None:
 
     assert selected.url == "https://github.example/plugins.git"
     assert selected.commit == primary
+
+
+def test_uses_primary_when_preferred_mirror_is_unavailable(monkeypatch) -> None:
+    commit = "b" * 40
+    probes = {
+        "https://github.example/plugins.git": _probe(
+            "https://github.example/plugins.git", commit, 0.2
+        ),
+        "https://gitee.example/plugins.git": _probe(
+            "https://gitee.example/plugins.git", "", 0.1, "offline"
+        ),
+    }
+    monkeypatch.setattr(
+        source_selection,
+        "_probe_git_source",
+        lambda url, ref, **kwargs: probes[url],
+    )
+
+    selected = source_selection.select_git_source(probes, "main")
+
+    assert selected.url == "https://github.example/plugins.git"
+    assert selected.commit == commit
 
 
 def test_uses_mirror_when_primary_is_unavailable(monkeypatch) -> None:

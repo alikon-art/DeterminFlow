@@ -5,9 +5,10 @@ LangChain 消息对象和 Graph 一并常驻内存。
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 import json
 import logging
+from collections.abc import Callable, Collection
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -15,6 +16,8 @@ if TYPE_CHECKING:
     from src.agent.session import AgentSession
 
 logger = logging.getLogger(__name__)
+
+_TERMINAL_STATUSES = {"completed", "error", "stopped", "cancelled"}
 
 
 def infer_runtime_scope(data: dict[str, Any]) -> str:
@@ -51,6 +54,7 @@ class SessionMetadata:
     last_message: str
     agent_type: str
     runtime_scope: str
+    persisted_status: str
     workspace_path: str | None = None
     workflow_id: str | None = None
     task_id: str | None = None
@@ -75,7 +79,8 @@ class SessionMetadata:
                 break
 
         session_type = str(data.get("session_type") or "sub")
-        status = _normalized_status(session_type, str(data.get("status") or "completed"))
+        persisted_status = str(data.get("status") or "completed")
+        status = _normalized_status(session_type, persisted_status)
         return cls(
             session_id=str(data.get("session_id") or fallback_id),
             session_type=session_type,
@@ -88,6 +93,7 @@ class SessionMetadata:
             last_message=last_message,
             agent_type=str(data.get("agent_type") or "default"),
             runtime_scope=infer_runtime_scope(data),
+            persisted_status=persisted_status,
             workspace_path=data.get("workspace_path"),
             workflow_id=data.get("workflow_id"),
             task_id=data.get("task_id"),
@@ -109,6 +115,7 @@ class SessionMetadata:
             last_message=summary.get("last_message", ""),
             agent_type=session.agent_type,
             runtime_scope=getattr(session, "runtime_scope", "interactive"),
+            persisted_status=session.status,
             workspace_path=session.workspace_path,
             workflow_id=session.workflow_id,
             task_id=session.task_id,
@@ -169,6 +176,58 @@ class SessionCatalog:
 
     def remove(self, session_id: str) -> None:
         self._entries.pop(session_id, None)
+
+    def prune_terminal_workflow_history(
+        self,
+        sessions_dir: Path,
+        *,
+        max_entries: int,
+        protected_session_ids: Collection[str],
+        can_delete: Callable[[SessionMetadata], bool],
+    ) -> dict[str, Any]:
+        """删除超出上限的旧 Workflow Session 文件。"""
+        protected = set(protected_session_ids)
+        candidates = [
+            metadata
+            for metadata in self._entries.values()
+            if metadata.session_id not in protected
+            and metadata.runtime_scope == "workflow"
+            and metadata.persisted_status in _TERMINAL_STATUSES
+            and can_delete(metadata)
+        ]
+        candidates.sort(
+            key=lambda metadata: (
+                metadata.updated_at,
+                metadata.created_at,
+                metadata.session_id,
+            ),
+            reverse=True,
+        )
+
+        deleted: list[str] = []
+        deleted_bytes = 0
+        errors = 0
+        for metadata in candidates[max(0, max_entries):]:
+            file_path = sessions_dir / f"{metadata.session_id}.json"
+            try:
+                try:
+                    deleted_bytes += file_path.stat().st_size
+                except FileNotFoundError:
+                    pass
+                file_path.unlink(missing_ok=True)
+            except OSError as exc:
+                errors += 1
+                logger.error("清理历史 Session %s 失败: %s", metadata.session_id, exc)
+                continue
+            self.remove(metadata.session_id)
+            deleted.append(metadata.session_id)
+
+        return {
+            "eligible": len(candidates),
+            "deleted": deleted,
+            "deleted_bytes": deleted_bytes,
+            "errors": errors,
+        }
 
     def values(self) -> list[SessionMetadata]:
         return list(self._entries.values())

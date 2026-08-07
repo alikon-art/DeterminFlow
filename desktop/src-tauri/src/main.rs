@@ -6,7 +6,7 @@ mod updater;
 use std::sync::Arc;
 
 use backend::{BackendState, LaunchedBackend};
-use tauri::{Manager, RunEvent};
+use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 
 fn show_startup_error(window: &tauri::WebviewWindow, message: &str) {
     let encoded = serde_json::to_string(message).unwrap_or_else(|_| "\"未知启动错误\"".to_string());
@@ -59,10 +59,22 @@ fn main() {
             updater::check_update_sources,
         ])
         .setup(|app| {
-            let window = app.get_webview_window("main").ok_or("无法创建主窗口")?;
-            let LaunchedBackend { child, url } = backend::launch(app.handle())?;
-            app.state::<Arc<BackendState>>().track(child)?;
-            navigate_when_ready(window, url);
+            let window =
+                WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+                    .title("DeterminFlow")
+                    .inner_size(1440.0, 920.0)
+                    .min_inner_size(1024.0, 700.0)
+                    .resizable(true)
+                    .center()
+                    .initialization_script(include_str!("../../ui/desktop-adapter.js"))
+                    .build()?;
+            match backend::launch(app.handle()) {
+                Ok(LaunchedBackend { child, url }) => {
+                    app.state::<Arc<BackendState>>().track(child)?;
+                    navigate_when_ready(window, url);
+                }
+                Err(error) => show_startup_error(&window, &error),
+            }
             Ok(())
         })
         .build(tauri::generate_context!())

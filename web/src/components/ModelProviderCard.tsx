@@ -235,6 +235,9 @@ export default function ModelProviderCard({
                   aria-label="API 地址"
                   className="min-h-11 w-full rounded-lg border border-slate-600 bg-slate-800 px-3 font-mono text-sm text-slate-200 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
                 />
+                <p className="mt-2 text-xs text-slate-500">
+                  完整 API Base URL，包含版本路径（v1，不带末尾斜杠/）
+                </p>
               </div>
             )}
           </div>

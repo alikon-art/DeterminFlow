@@ -9,8 +9,9 @@
 | 桌面壳 | Tauri 2 + Windows WebView2 | 创建原生窗口、启动和关闭本地后端 |
 | 后端 | PyInstaller `onedir` | 冻结现有 Python/FastAPI 服务，不要求用户安装 Python |
 | 前端 | 现有 `web/dist` | 由本地 FastAPI 服务提供，入口和服务版一致 |
+| 桌面适配 | `ui/desktop-adapter.js` | 仅由 Tauri 注入，提供错误弹窗和 Provider Key 保存前连通性检查；服务版不加载 |
 | 安装包 | NSIS `currentUser` | 安装到当前用户目录，不申请管理员权限；向导使用正式品牌图 |
-| 更新 | Tauri Updater + GitHub Releases | 每日静默检查，用户确认后下载签名更新并重启 |
+| 更新 | Tauri Updater + GitHub/Gitee Releases | Gitee 优先，失败时回退 GitHub；用户确认后下载签名更新并重启 |
 | 构建 | GitHub Actions `windows-2025` | 在真实 x64 Windows Runner 上生成、安装、启动并卸载验证安装包 |
 
 同一版本生成两个安装包：
@@ -57,6 +58,7 @@ python desktop/scripts/build_backend.py
 python desktop/scripts/smoke_backend.py
 python desktop/scripts/verify_bundle.py
 (cd desktop && npm ci)
+(cd desktop && npm test)
 (cd desktop/src-tauri && cargo test)
 ```
 
@@ -64,14 +66,14 @@ GitHub 临时分支 `codex/desktop-tauri-poc` 会运行 `.github/workflows/deskt
 
 ## 桌面更新发布
 
-桌面端只信任 `alikon-art/DeterminFlow` 最新 GitHub Release 中的 `latest.json`，清单始终指向 Core 安装包。正式发布时，该 Release 同时上传 Core/Full NSIS 安装包、各自同名 `.sig`、SHA-256 文件和 `latest.json`；清单可通过 `desktop/scripts/create_update_manifest.py` 生成。更新私钥不得进入 Git，只通过 GitHub Actions Secret `TAURI_SIGNING_PRIVATE_KEY` 注入构建。
+桌面端并行检查 GitHub 与 Gitee 的最新 Release。版本不同时选择较新版本；版本与签名一致时优先从 Gitee 下载，下载失败后回退 GitHub。清单始终指向 Core 安装包，两个来源最终都必须通过同一 Tauri 公钥验签。正式发布时，GitHub Release 同时上传 Core/Full NSIS 安装包、各自同名 `.sig`、SHA-256 文件和 `latest.json`；清单可通过 `desktop/scripts/create_update_manifest.py` 生成。更新私钥不得进入 Git，只通过 GitHub Actions Secret `TAURI_SIGNING_PRIVATE_KEY` 注入构建。
 
 Full 构建从官方 Plugin 仓库的 `main` Catalog 解析当时全部公开 Plugin，执行声明式资源
 预检后锁定精确 Commit 与内容摘要，再写入安装包。Core 自动更新不重置 Plugin 状态。
 当前 Plugin 在线安装和后续更新仍调用系统 Git；没有 Git 的用户可以使用 Full 的内置
 快照，但要从 UI 更新到未来 Plugin 版本仍需先安装 Git。
 
-服务版仍按原入口运行，不初始化 Tauri 更新插件，也不显示更新 UI。若最新 GitHub Release 没有 `latest.json`，桌面端会保留当前版本并提示更新服务尚未发布，不影响应用本身使用。
+服务版仍按原入口运行，不初始化 Tauri 更新插件，也不显示更新 UI。若 GitHub 与 Gitee 的最新 Release 都没有可用 `latest.json`，桌面端会保留当前版本并提示更新服务尚未发布，不影响应用本身使用。
 
 ## 首版限制
 

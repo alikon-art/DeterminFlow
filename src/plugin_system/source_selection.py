@@ -106,7 +106,7 @@ def select_git_source(
     git_binary: str = "git",
     timeout_seconds: float = 15,
 ) -> GitSourceSelection:
-    """Choose the fastest source at the authoritative primary revision."""
+    """Prefer configured mirrors at the authoritative primary revision."""
     candidates = tuple(dict.fromkeys(str(url).strip() for url in urls if str(url).strip()))
     if not candidates:
         raise ValueError("Plugin 仓库没有可用拉取地址")
@@ -138,7 +138,10 @@ def select_git_source(
         available = [
             probe for probe in available if probe.commit == primary.commit
         ]
-    selected = min(available, key=lambda probe: probe.elapsed_seconds)
+    transport_priority = {
+        url: index for index, url in enumerate((*candidates[1:], candidates[0]))
+    }
+    selected = min(available, key=lambda probe: transport_priority[probe.url])
     return GitSourceSelection(
         url=selected.url,
         commit=selected.commit,

@@ -146,13 +146,17 @@ def test_desktop_lifecycle_cleans_up_the_backend_before_every_exit() -> None:
     assert "releases/latest/download/latest.json" in updater_source
     assert "gitee.com/api/v5/repos/alikon/DeterminFlow/releases/latest" in updater_source
     assert "github_version > gitee_version" in updater_source
-    assert "github.elapsed <= gitee.elapsed" in updater_source
+    assert "primary: UpdateSource::Gitee" in updater_source
+    assert "fallback: Some(UpdateSource::Github)" in updater_source
+    assert "fallback_rid" in updater_source
     assert 'invoke<UpdateMetadata | null>("check_update_sources")' in updater_context
+    assert "downloadUpdateWithFallback(" in updater_context
+    assert "fallbackRid" in updater_context
     assert 'matches!(event, RunEvent::Exit)' in main_source
     assert main_source.count(".stop();") >= 2
-    download = updater_context.index("await resource.download(")
+    download = updater_context.index("await candidate.download(")
     prepare = updater_context.index('await invoke("prepare_for_update")')
-    install = updater_context.index("await resource.install()")
+    install = updater_context.index("await downloadedResource.install()")
     assert download < prepare < install
     assert "downloadAndInstall" not in updater_context
     assert "NSIS_HOOK_PREINSTALL" in hooks
@@ -405,7 +409,7 @@ def test_desktop_versions_are_consistent() -> None:
         encoding="utf-8"
     )
 
-    assert tauri["version"] == "1.0.7"
+    assert tauri["version"] == "1.0.8"
     assert package["version"] == tauri["version"]
     assert f'version = "{tauri["version"]}"' in cargo
 

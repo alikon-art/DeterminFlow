@@ -5,6 +5,7 @@ import {
   DESKTOP_UPDATE_INTERVAL_MS,
   calculateDownloadProgress,
   describeUpdateError,
+  downloadUpdateWithFallback,
   isDesktopRuntime,
   shouldAutoCheckForUpdate,
 } from "./desktop-update";
@@ -30,6 +31,48 @@ test("download progress stays within zero and one hundred percent", () => {
   assert.equal(calculateDownloadProgress(120, 100), 100);
   assert.equal(calculateDownloadProgress(-10, 100), 0);
   assert.equal(calculateDownloadProgress(20), null);
+});
+
+test("update download uses the primary source when it succeeds", async () => {
+  const attempts: string[] = [];
+  const selected = await downloadUpdateWithFallback(
+    "gitee",
+    "github",
+    async (source, attempt) => {
+      attempts.push(`${attempt}:${source}`);
+    },
+  );
+
+  assert.equal(selected, "gitee");
+  assert.deepEqual(attempts, ["primary:gitee"]);
+});
+
+test("update download falls back once when the primary source fails", async () => {
+  const attempts: string[] = [];
+  const selected = await downloadUpdateWithFallback(
+    "gitee",
+    "github",
+    async (source, attempt) => {
+      attempts.push(`${attempt}:${source}`);
+      if (source === "gitee") throw new Error("offline");
+    },
+  );
+
+  assert.equal(selected, "github");
+  assert.deepEqual(attempts, ["primary:gitee", "fallback:github"]);
+});
+
+test("update download reports the fallback failure", async () => {
+  await assert.rejects(
+    downloadUpdateWithFallback(
+      "gitee",
+      "github",
+      async (source) => {
+        throw new Error(`${source} offline`);
+      },
+    ),
+    /github offline/,
+  );
 });
 
 test("update errors keep technical details out of the user interface", () => {

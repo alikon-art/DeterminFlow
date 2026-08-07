@@ -11,7 +11,7 @@
     "deepseek": {
       "category": "ds",
       "name": "DeepSeek",
-      "base_url": "https://api.deepseek.com",
+      "base_url": "https://api.deepseek.com/v1",
       "api_key": "${DEEPSEEK_API_KEY}",
       "models": [
         "deepseek-v4-flash",

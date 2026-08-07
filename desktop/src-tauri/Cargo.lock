@@ -713,7 +713,7 @@ dependencies = [
 
 [[package]]
 name = "determinflow-desktop"
-version = "1.0.7"
+version = "1.0.8"
 dependencies = [
  "futures-util",
  "reqwest",
