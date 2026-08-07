@@ -13,12 +13,29 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": ["nsis", "app", "dmg"],
     "createUpdaterArtifacts": true,
     "publisher": "DeterminFlow Contributors",
-    "icon": ["icons/icon.ico", "icons/icon.png"],
+    "icon": ["icons/icon.icns", "icons/icon.ico", "icons/icon.png"],
     "resources": {
       "../runtime/backend/": "runtime/backend/"
+    },
+    "macOS": {
+      "minimumSystemVersion": "10.15",
+      "dmg": {
+        "appPosition": {
+          "x": 180,
+          "y": 170
+        },
+        "applicationFolderPosition": {
+          "x": 480,
+          "y": 170
+        },
+        "windowSize": {
+          "width": 660,
+          "height": 400
+        }
+      }
     },
     "windows": {
       "webviewInstallMode": {
