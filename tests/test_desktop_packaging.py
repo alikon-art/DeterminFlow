@@ -40,9 +40,11 @@ def test_tauri_bundle_is_a_per_user_nsis_installer() -> None:
     nsis = bundle["windows"]["nsis"]
 
     assert config["productName"] == "DeterminFlow"
-    assert bundle["targets"] == ["nsis"]
+    assert bundle["targets"] == ["nsis", "app", "dmg"]
     assert bundle["createUpdaterArtifacts"] is True
-    assert bundle["icon"] == ["icons/icon.ico", "icons/icon.png"]
+    assert bundle["icon"] == ["icons/icon.icns", "icons/icon.ico", "icons/icon.png"]
+    assert bundle["macOS"]["minimumSystemVersion"] == "10.15"
+    assert bundle["macOS"]["dmg"]["windowSize"] == {"width": 660, "height": 400}
     assert nsis["installMode"] == "currentUser"
     assert nsis["installerIcon"] == "icons/icon.ico"
     assert nsis["installerHooks"] == "./windows/installer-hooks.nsh"
@@ -66,6 +68,7 @@ def test_tauri_bundle_is_a_per_user_nsis_installer() -> None:
     icons_dir = REPO_ROOT / "desktop" / "src-tauri" / "icons"
     assert (icons_dir / "icon.ico").stat().st_size > 1024
     assert (icons_dir / "icon.png").read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+    assert (icons_dir / "icon.icns").read_bytes().startswith(b"icns")
 
     images_dir = REPO_ROOT / "desktop" / "src-tauri" / "images"
     for name, dimensions in {
