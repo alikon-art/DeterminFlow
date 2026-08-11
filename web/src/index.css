@@ -223,3 +223,119 @@
     box-shadow: none;
   }
 }
+
+/* Light workbench theme shared by the 1.0.8 desktop shell. */
+.theme-light {
+  --background: 210 20% 98%;
+  --foreground: 222 22% 15%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 22% 15%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 22% 15%;
+  --primary: 217 91% 60%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 210 20% 96%;
+  --secondary-foreground: 222 22% 20%;
+  --muted: 210 20% 96%;
+  --muted-foreground: 215 13% 43%;
+  --accent: 214 95% 93%;
+  --accent-foreground: 217 91% 38%;
+  --border: 214 18% 88%;
+  --input: 214 18% 88%;
+  --ring: 217 91% 60%;
+}
+.theme-light .bg-slate-900,
+.theme-light .bg-slate-900\/95,
+.theme-light .bg-slate-900\/80,
+.theme-light .bg-slate-900\/60,
+.theme-light .bg-slate-900\/50,
+.theme-light .bg-slate-900\/40,
+.theme-light .bg-slate-900\/30,
+.theme-light .bg-slate-800,
+.theme-light .bg-slate-800\/95,
+.theme-light .bg-slate-800\/90,
+.theme-light .bg-slate-800\/80,
+.theme-light .bg-slate-800\/60,
+.theme-light .bg-slate-800\/50,
+.theme-light .bg-slate-800\/40,
+.theme-light .bg-slate-800\/30 { background-color: #ffffff !important; }
+.theme-light .bg-slate-700,
+.theme-light .bg-slate-700\/90,
+.theme-light .bg-slate-700\/80,
+.theme-light .bg-slate-700\/70,
+.theme-light .bg-slate-700\/60,
+.theme-light .bg-slate-700\/50 { background-color: #f1f4f7 !important; }
+.theme-light .bg-slate-950,
+.theme-light .bg-slate-950\/95,
+.theme-light .bg-slate-950\/80,
+.theme-light .bg-slate-950\/70,
+.theme-light .bg-slate-950\/60,
+.theme-light .bg-slate-950\/50,
+.theme-light .bg-slate-950\/40 { background-color: #f8fafc !important; }
+.theme-light .hover\:bg-slate-900:hover,
+.theme-light .hover\:bg-slate-900\/80:hover,
+.theme-light .hover\:bg-slate-900\/60:hover,
+.theme-light .hover\:bg-slate-800:hover,
+.theme-light .hover\:bg-slate-800\/60:hover,
+.theme-light .hover\:bg-slate-800\/50:hover,
+.theme-light .hover\:bg-slate-700:hover,
+.theme-light .hover\:bg-slate-700\/60:hover,
+.theme-light .hover\:bg-slate-700\/50:hover { background-color: #f1f5f9 !important; }
+.theme-light .text-slate-100,
+.theme-light .text-slate-200 { color: #1f2937 !important; }
+.theme-light .text-slate-300 { color: #374151 !important; }
+.theme-light .text-slate-400 { color: #59616d !important; }
+.theme-light .text-slate-500 { color: #7a8492 !important; }
+.theme-light .text-indigo-100,
+.theme-light .text-indigo-200,
+.theme-light .text-indigo-300,
+.theme-light .text-indigo-400,
+.theme-light .text-indigo-500,
+.theme-light .text-purple-300,
+.theme-light .text-purple-400,
+.theme-light .text-purple-500,
+.theme-light .text-cyan-300,
+.theme-light .text-cyan-400,
+.theme-light .text-cyan-500 { color: #2563eb !important; }
+.theme-light .border-slate-900,
+.theme-light .border-slate-800,
+.theme-light .border-slate-700,
+.theme-light .border-slate-700\/50,
+.theme-light .border-white\/5,
+.theme-light .border-white\/10 { border-color: #e2e7ed !important; }
+.theme-light .bg-indigo-500\/10,
+.theme-light .bg-indigo-500\/15,
+.theme-light .bg-indigo-500\/20,
+.theme-light .bg-purple-500\/10,
+.theme-light .bg-purple-500\/20,
+.theme-light .bg-cyan-500\/10,
+.theme-light .bg-cyan-500\/20 { background-color: rgb(37 99 235 / 0.08) !important; }
+.theme-light .prose-invert { --tw-prose-body: #374151; --tw-prose-headings: #1f2937; --tw-prose-links: #2563eb; --tw-prose-bold: #1f2937; --tw-prose-code: #1f2937; }
+.theme-light .shadow-lg,
+.theme-light .shadow-xl,
+.theme-light .shadow-2xl { box-shadow: 0 8px 24px rgb(15 23 42 / 0.08) !important; }
+
+/* Final light-theme guardrail: legacy dark surfaces must never leak into the white desktop UI. */
+.theme-light [class*="bg-slate-950"],
+.theme-light [class*="bg-slate-900"],
+.theme-light [class*="bg-slate-800"] {
+  background-color: #ffffff !important;
+}
+
+.theme-light [class*="bg-slate-700"] {
+  background-color: #f8fafc !important;
+}
+
+.theme-light [class*="border-slate-900"],
+.theme-light [class*="border-slate-800"],
+.theme-light [class*="border-slate-700"],
+.theme-light [class*="border-slate-600"] {
+  border-color: #e2e8f0 !important;
+}
+
+.theme-light [class*="hover:bg-slate-950"]:hover,
+.theme-light [class*="hover:bg-slate-900"]:hover,
+.theme-light [class*="hover:bg-slate-800"]:hover,
+.theme-light [class*="hover:bg-slate-700"]:hover {
+  background-color: #f1f5f9 !important;
+}

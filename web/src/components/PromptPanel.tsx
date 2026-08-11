@@ -35,9 +35,9 @@ export default function PromptPanel({ llmContext, loading, onRefresh, sessionId 
   const { system_prompt, agent_type, tools, tools_count, message_counts, token_estimate, model_config, messages } = llmContext;
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col bg-white">
       {/* Header */}
-      <div className="px-3 py-2 border-b border-border/50 flex-shrink-0">
+      <div className="px-4 py-3 border-b border-slate-200 bg-white flex-shrink-0">
         <div className="flex items-center justify-between mb-1.5">
           <div className="flex items-center gap-1.5">
             <span className="text-xs font-medium text-purple-500">LLM 完整上下文</span>
@@ -55,8 +55,8 @@ export default function PromptPanel({ llmContext, loading, onRefresh, sessionId 
           </button>
         </div>
         {/* 摘要统计条 */}
-        <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
-          <span className="font-mono text-cyan-500">{sessionId}</span>
+        <div className="flex items-center gap-2 text-[11px] text-slate-500 flex-wrap">
+          <span className="font-mono text-blue-600">{sessionId}</span>
           <span aria-hidden="true">·</span>
           <span>{model_config.model}</span>
           <span aria-hidden="true">·</span>
@@ -92,12 +92,12 @@ export default function PromptPanel({ llmContext, loading, onRefresh, sessionId 
 
       {/* Content */}
       <ScrollArea className="flex-1">
-        <div className="px-3 py-2">
+        <div className="px-4 py-4 space-y-3">
           {/* === System Prompt Tab === */}
           {activeTab === "system_prompt" && (
             <div id="tabpanel-system_prompt" role="tabpanel" aria-label="System Prompt 内容">
               {system_prompt ? (
-                <div className="p-3 rounded-lg bg-slate-800/80 border border-slate-700/50 prose prose-invert prose-sm max-w-none
+                <div className="p-4 rounded-lg bg-slate-800/80 border border-slate-700/50 prose prose-sm max-w-none break-words
                   prose-headings:text-purple-500 prose-headings:text-sm prose-headings:font-semibold prose-headings:mt-3 prose-headings:mb-1.5
                   prose-p:text-xs prose-p:text-slate-300 prose-p:leading-relaxed prose-p:my-1
                   prose-li:text-xs prose-li:text-slate-300 prose-li:my-0.5

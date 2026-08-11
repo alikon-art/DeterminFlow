@@ -100,10 +100,24 @@ export async function deleteSession(sessionId: string) {
   });
 }
 
-export async function createNewMainSession(agentType?: string) {
+export async function deleteProject(projectName: string) {
+  return request<{
+    success: boolean;
+    message: string;
+    deleted_session_ids?: string[];
+    deleted_task_ids?: string[];
+  }>(`/sessions/projects/${encodeURIComponent(projectName)}`, {
+    method: "DELETE",
+  });
+}
+
+export async function createNewMainSession(agentType?: string, projectName?: string) {
   return request<{ success: boolean; session_id: string; message: string }>("/sessions/main/new", {
     method: "POST",
-    body: JSON.stringify({ agent_type: agentType || "main" }),
+    body: JSON.stringify({
+      agent_type: agentType || "main",
+      project_name: projectName?.trim() || "未分类项目",
+    }),
   });
 }
 

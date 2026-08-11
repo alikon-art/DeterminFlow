@@ -76,6 +76,7 @@ class SessionMetadata:
     resource_owner: str = ""
     external_ref: str = ""
     scope_hash: str = ""
+    project_name: str = "未分类项目"
 
     @classmethod
     def from_data(cls, data: dict[str, Any], *, fallback_id: str = "") -> "SessionMetadata":
@@ -124,6 +125,7 @@ class SessionMetadata:
             resource_owner=str(data.get("resource_owner") or ""),
             external_ref=str(data.get("external_ref") or ""),
             scope_hash=str(data.get("scope_hash") or ""),
+            project_name=str(data.get("project_name") or "未分类项目"),
         )
 
     @classmethod
@@ -150,6 +152,7 @@ class SessionMetadata:
             resource_owner=getattr(session, "resource_owner", ""),
             external_ref=getattr(session, "external_ref", ""),
             scope_hash=getattr(session, "scope_hash", ""),
+            project_name=getattr(session, "project_name", "未分类项目"),
         )
 
     def to_summary(self) -> dict[str, Any]:
@@ -164,6 +167,7 @@ class SessionMetadata:
             "updated_at": self.updated_at,
             "last_message": self.last_message,
             "agent_type": self.agent_type,
+            "project_name": self.project_name,
         }
         for key in ("workspace_path", "workflow_id", "task_id", "node_id"):
             value = getattr(self, key)

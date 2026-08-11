@@ -231,9 +231,10 @@ def test_deleting_historical_main_cascades_sessions_and_workflow_tasks(
     assert not (isolated_sessions / "workflow-agent.json").exists()
     assert not (isolated_sessions / "workflow-agent-child.json").exists()
 
-    protected = asyncio.run(session_manager.delete_session("main-current"))
-    assert protected["success"] is False
-    assert "当前活跃的主会话" in protected["message"]
+    deleted_current = asyncio.run(session_manager.delete_session("main-current"))
+    assert deleted_current["success"] is True
+    assert deleted_current["deleted_session_ids"] == ["main-current"]
+    assert session_manager.main_session_id is None
 
 
 def test_historical_session_load_is_bounded_by_lru(isolated_sessions):

@@ -3,6 +3,7 @@ import { FileText, RefreshCw, Eye, Code, Wrench, ChevronDown, ChevronRight, Term
 import { fetchSessionSystemPrompt, fetchSessions } from "../lib/api";
 import { Session } from "../types";
 import MarkdownRenderer from "../components/MarkdownRenderer";
+import { getAgentDisplayName } from "../lib/agent-labels";
 
 interface ToolParameter {
   type: string;
@@ -82,8 +83,8 @@ export default function SystemPromptPage() {
       const data = await fetchSessionSystemPrompt(sessionId);
       setPromptData(data);
     } catch (err) {
-      console.error("加载 system prompt 失败:", err);
-      setError("加载 system prompt 失败");
+      console.error("加载系统提示词失败:", err);
+      setError("加载系统提示词失败");
       setPromptData(null);
     } finally {
       setLoading(false);
@@ -165,7 +166,7 @@ export default function SystemPromptPage() {
             <div>
               <h2 className="text-xl font-bold text-slate-100">System Prompt 预览</h2>
               <p className="text-xs text-slate-400 mt-0.5">
-                查看 Agent 实际获取到的完整 system prompt（包含 MCP、Skills、Rules 等）
+                查看代理实际获取到的完整系统提示词（包含模型上下文协议、技能、规则等）
               </p>
             </div>
           </div>
@@ -272,7 +273,7 @@ export default function SystemPromptPage() {
                 sessions.map((session) => (
                   <option key={session.session_id} value={session.session_id}>
                     {session.type === "main" ? "[主] " : "[子] "}
-                    {session.session_id.slice(0, 8)} - {session.task || "无任务描述"} ({session.agent_type || "default"})
+                    {session.session_id.slice(0, 8)} - {session.task || "无任务描述"} ({getAgentDisplayName(session.agent_type || "default")})
                   </option>
                 ))
               )}

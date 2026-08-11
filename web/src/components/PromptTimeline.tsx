@@ -9,7 +9,7 @@ interface PromptTimelineProps {
 
 export default function PromptTimeline({ history }: PromptTimelineProps) {
   return (
-    <div className="p-4 rounded-lg bg-slate-800/80 border border-slate-700/50" role="region" aria-label="提示词进化时间线">
+    <div className="p-4 rounded-lg bg-white border border-slate-200" role="region" aria-label="提示词进化时间线">
       <h3 className="text-sm font-medium text-muted-foreground mb-4">提示词进化时间线</h3>
       {history.length === 0 ? (
         <div className="text-center text-muted-foreground text-sm py-4" role="status">暂无修改历史</div>
@@ -33,7 +33,7 @@ function TimelineEntry({ entry }: { entry: PromptHistoryEntry }) {
   return (
     <div className="relative pb-4" role="article" aria-label={`版本 ${entry.version} 到 ${entry.version + 1} 的变更`}>
       {/* Node dot */}
-      <div className="absolute -left-3.5 w-3 h-3 rounded-full bg-slate-900 border-2 border-indigo-500" aria-hidden="true" />
+      <div className="absolute -left-3.5 w-3 h-3 rounded-full bg-white border-2 border-blue-500" aria-hidden="true" />
 
       <div className="ml-4">
         <button
@@ -58,13 +58,13 @@ function TimelineEntry({ entry }: { entry: PromptHistoryEntry }) {
 
         {expanded && (
           <div className="mt-2 space-y-2">
-            <div className="bg-slate-900/60 rounded p-2">
+            <div className="bg-slate-50 border border-slate-200 rounded p-2">
               <div className="text-xs text-red-500 mb-1">旧提示词 (前100字):</div>
               <div className="text-xs text-slate-400 max-h-24 overflow-y-auto">
                 {entry.old_prompt.slice(0, 200)}...
               </div>
             </div>
-            <div className="bg-slate-900/60 rounded p-2">
+            <div className="bg-slate-50 border border-slate-200 rounded p-2">
               <div className="text-xs text-green-500 mb-1">新提示词 (前100字):</div>
               <div className="text-xs text-slate-400 max-h-24 overflow-y-auto">
                 {entry.new_prompt.slice(0, 200)}...

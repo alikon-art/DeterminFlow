@@ -61,6 +61,7 @@ class SendMessageRequest(BaseModel):
 class CreateMainSessionRequest(BaseModel):
 
     agent_type: str = "main"
+    project_name: str = Field(default="未分类项目", min_length=1, max_length=80)
 
 
 class UpdateSessionModelRequest(BaseModel):
@@ -468,6 +469,16 @@ async def delete_session(session_id: str, request: Request):
     return result
 
 
+@router.delete("/sessions/projects/{project_name}")
+async def delete_project(project_name: str, request: Request):
+    """Delete all conversation trees belonging to a project."""
+    sm = _get_session_manager(request)
+    result = await sm.delete_project(project_name)
+    if not result["success"]:
+        raise HTTPException(status_code=404, detail=result["message"])
+    return result
+
+
 
 
 
@@ -476,7 +487,11 @@ async def create_new_main_session(body: CreateMainSessionRequest, request: Reque
     """创建新的主会话（前端主动触发），支持指定 agent_type"""
     sm = _get_session_manager(request)
     llm = getattr(request.app.state, "llm", None)
-    result = await sm.create_main_session(llm_client=llm, agent_type=body.agent_type)
+    result = await sm.create_main_session(
+        llm_client=llm,
+        agent_type=body.agent_type,
+        project_name=body.project_name.strip() or "未分类项目",
+    )
     return result
 
 

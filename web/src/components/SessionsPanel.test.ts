@@ -10,7 +10,7 @@ const historicalRunningMain = {
   status: "running",
 } as Session;
 
-test("historical Main sessions remain deletable while the active Main is protected", () => {
+test("every Main conversation remains deletable, including the active one", () => {
   assert.equal(canDeleteMainSession(historicalRunningMain, "main-current"), true);
-  assert.equal(canDeleteMainSession(historicalRunningMain, "main-history"), false);
+  assert.equal(canDeleteMainSession(historicalRunningMain, "main-history"), true);
 });

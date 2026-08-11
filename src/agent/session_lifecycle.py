@@ -595,7 +595,14 @@ class SessionLifecycleMixin:
         if not session:
             return {"success": False, "message": f"未找到会话 {session_id}"}
         if session_id == self.main_session_id:
-            return {"success": False, "message": "不能删除当前活跃的主会话"}
+            # The UI may delete the currently selected conversation.  Move the
+            # active pointer first so this removes only this conversation tree.
+            remaining_mains = [
+                summary["session_id"]
+                for summary in self.get_session_summaries()
+                if summary.get("type") == "main" and summary["session_id"] != session_id
+            ]
+            self.main_session_id = remaining_mains[0] if remaining_mains else None
         if session.session_type == "main":
             return await self._delete_main_session_tree(session_id)
 
@@ -630,6 +637,47 @@ class SessionLifecycleMixin:
             "success_count": success_count,
             "fail_count": fail_count,
             "details": results,
+        }
+
+    async def delete_project(self, project_name: str) -> dict:
+        """Delete every main-session tree that belongs to a project."""
+        normalized_name = project_name.strip() or "未分类项目"
+        main_ids = [
+            summary["session_id"]
+            for summary in self.get_session_summaries()
+            if summary.get("type") == "main"
+            and (summary.get("project_name") or "未分类项目") == normalized_name
+        ]
+        if not main_ids:
+            return {"success": False, "message": f"未找到项目：{normalized_name}"}
+
+        if self.main_session_id in main_ids:
+            remaining_mains = [
+                summary["session_id"]
+                for summary in self.get_session_summaries()
+                if summary.get("type") == "main" and summary["session_id"] not in main_ids
+            ]
+            self.main_session_id = remaining_mains[0] if remaining_mains else None
+
+        deleted_session_ids: list[str] = []
+        deleted_task_ids: list[str] = []
+        for main_id in main_ids:
+            result = await self._delete_main_session_tree(main_id)
+            if not result["success"]:
+                return {
+                    "success": False,
+                    "message": result["message"],
+                    "deleted_session_ids": deleted_session_ids,
+                    "deleted_task_ids": deleted_task_ids,
+                }
+            deleted_session_ids.extend(result.get("deleted_session_ids", []))
+            deleted_task_ids.extend(result.get("deleted_task_ids", []))
+
+        return {
+            "success": True,
+            "message": f"项目“{normalized_name}”已删除",
+            "deleted_session_ids": deleted_session_ids,
+            "deleted_task_ids": deleted_task_ids,
         }
 
     def get_session_tree(self, main_id: str | None = None) -> dict:

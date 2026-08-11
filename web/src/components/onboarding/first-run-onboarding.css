@@ -1,19 +1,19 @@
 .first-run-onboarding,
 .first-run-bootstrap,
 .first-run-risk-backdrop {
-  --first-run-bg: oklch(0.17 0.026 273);
-  --first-run-bg-deep: oklch(0.125 0.022 273);
-  --first-run-surface: oklch(0.225 0.03 273);
-  --first-run-surface-raised: oklch(0.265 0.038 273);
-  --first-run-border: oklch(0.39 0.045 273 / 0.56);
-  --first-run-copy: oklch(0.96 0.008 273);
-  --first-run-muted: oklch(0.71 0.025 273);
-  --first-run-accent: oklch(0.71 0.17 272);
-  --first-run-accent-bright: oklch(0.8 0.135 268);
-  --first-run-cyan: oklch(0.78 0.12 211);
-  --first-run-success: oklch(0.75 0.14 157);
-  --first-run-danger: oklch(0.72 0.16 26);
-  --first-run-warning: oklch(0.79 0.14 78);
+  --first-run-bg: #ffffff;
+  --first-run-bg-deep: #ffffff;
+  --first-run-surface: #ffffff;
+  --first-run-surface-raised: #f8fafc;
+  --first-run-border: #e2e8f0;
+  --first-run-copy: #172033;
+  --first-run-muted: #64748b;
+  --first-run-accent: #2563eb;
+  --first-run-accent-bright: #1d4ed8;
+  --first-run-cyan: #0891b2;
+  --first-run-success: #16a34a;
+  --first-run-danger: #dc2626;
+  --first-run-warning: #d97706;
   --first-run-ease: cubic-bezier(0.16, 1, 0.3, 1);
   color: var(--first-run-copy);
   font-family: "DIN Next", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
@@ -24,10 +24,7 @@
   inset: 0;
   z-index: 100;
   overflow: hidden;
-  background:
-    radial-gradient(circle at 75% 20%, oklch(0.43 0.16 278 / 0.22), transparent 32rem),
-    radial-gradient(circle at 16% 82%, oklch(0.43 0.1 219 / 0.12), transparent 28rem),
-    var(--first-run-bg-deep);
+  background: var(--first-run-bg-deep);
   outline: none;
   isolation: isolate;
 }
@@ -37,8 +34,8 @@
   inset: 0;
   z-index: -1;
   background-image:
-    linear-gradient(oklch(0.92 0.015 273 / 0.025) 1px, transparent 1px),
-    linear-gradient(90deg, oklch(0.92 0.015 273 / 0.025) 1px, transparent 1px);
+    linear-gradient(rgb(148 163 184 / 0.11) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(148 163 184 / 0.11) 1px, transparent 1px);
   background-size: 46px 46px;
   content: "";
   mask-image: linear-gradient(to bottom, transparent, oklch(0 0 0) 20%, oklch(0 0 0) 80%, transparent);
@@ -84,8 +81,8 @@
   min-height: 4.75rem;
   align-items: center;
   padding: 0 2.5rem;
-  border-bottom: 1px solid oklch(0.48 0.045 273 / 0.24);
-  background: oklch(0.15 0.026 273 / 0.88);
+  border-bottom: 1px solid var(--first-run-border);
+  background: rgb(255 255 255 / 0.96);
   backdrop-filter: blur(18px) saturate(115%);
 }
 
@@ -150,7 +147,7 @@
 .first-run-progress button.is-current > span {
   border-color: var(--first-run-accent);
   background: var(--first-run-accent);
-  color: oklch(0.16 0.025 273);
+  color: #ffffff;
   box-shadow: 0 0 0 5px oklch(0.71 0.17 272 / 0.1);
 }
 
@@ -160,8 +157,11 @@
 }
 
 .first-run-skip {
+  display: inline-flex;
   justify-self: end;
   min-height: 2.5rem;
+  align-items: center;
+  gap: 0.4rem;
   border: 0;
   border-radius: 0.65rem;
   background: transparent;
@@ -170,6 +170,27 @@
   cursor: pointer;
   font-size: 0.8rem;
   transition: color 180ms var(--first-run-ease), background-color 180ms var(--first-run-ease);
+}
+
+.first-run-skip-area {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
+.first-run-skip-area > span {
+  max-width: 18rem;
+  color: var(--first-run-danger);
+  font-size: 0.7rem;
+  line-height: 1.35;
+  text-align: right;
+}
+
+.first-run-skip:disabled {
+  cursor: wait;
+  opacity: 0.65;
 }
 
 .first-run-skip:hover {
@@ -280,7 +301,7 @@
 .first-run-primary-button {
   border: 1px solid oklch(0.8 0.15 272 / 0.38);
   background: var(--first-run-accent);
-  color: oklch(0.15 0.03 273);
+  color: #ffffff;
   box-shadow: 0 12px 28px oklch(0.45 0.2 273 / 0.28);
 }
 
@@ -304,7 +325,7 @@
 
 .first-run-secondary-button {
   border: 1px solid var(--first-run-border);
-  background: oklch(0.24 0.03 273 / 0.52);
+  background: #ffffff;
   color: var(--first-run-muted);
 }
 
@@ -343,14 +364,12 @@
   width: 100%;
   min-height: 34rem;
   overflow: hidden;
-  border: 1px solid oklch(0.54 0.08 273 / 0.4);
+  border: 1px solid var(--first-run-border);
   border-radius: 2rem;
-  background:
-    radial-gradient(circle at 50% 45%, oklch(0.51 0.16 275 / 0.19), transparent 15rem),
-    oklch(0.19 0.034 273 / 0.88);
+  background: #ffffff;
   box-shadow:
-    0 34px 90px oklch(0.07 0.02 273 / 0.46),
-    inset 0 1px oklch(0.9 0.03 273 / 0.07);
+    0 20px 55px rgb(15 23 42 / 0.08),
+    inset 0 1px #ffffff;
   contain: layout paint;
 }
 
@@ -404,7 +423,7 @@
   justify-content: center;
   border: 1px solid oklch(0.76 0.14 272 / 0.42);
   border-radius: 50%;
-  background: oklch(0.23 0.065 273);
+  background: #ffffff;
   box-shadow:
     0 0 0 0.8rem oklch(0.5 0.17 273 / 0.07),
     0 0 4rem oklch(0.52 0.18 273 / 0.28);
@@ -463,9 +482,9 @@
   gap: 0.65rem;
   border: 1px solid var(--first-run-border);
   border-radius: 0.8rem;
-  background: oklch(0.245 0.034 273 / 0.94);
+  background: #ffffff;
   padding: 0.68rem 0.78rem;
-  box-shadow: 0 12px 30px oklch(0.08 0.02 273 / 0.22);
+  box-shadow: 0 10px 28px rgb(15 23 42 / 0.08);
 }
 
 .first-run-mini-node > svg {
@@ -527,8 +546,8 @@
 .first-run-plugins__visual {
   border: 1px solid var(--first-run-border);
   border-radius: 1.2rem;
-  background: oklch(0.205 0.03 273 / 0.82);
-  box-shadow: inset 0 1px oklch(0.94 0.02 273 / 0.035);
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgb(15 23 42 / 0.05);
 }
 
 .first-run-model-source-switcher {
@@ -546,7 +565,7 @@
   gap: 0.75rem;
   border: 1px solid var(--first-run-border);
   border-radius: 0.9rem;
-  background: oklch(0.205 0.03 273 / 0.82);
+  background: #ffffff;
   padding: 0.75rem 0.9rem;
   color: var(--first-run-copy);
   cursor: pointer;
@@ -621,12 +640,12 @@
 
 .first-run-public-model-panel {
   border-color: oklch(0.75 0.14 157 / 0.4);
-  background: oklch(0.22 0.045 157 / 0.2);
+  background: #ffffff;
 }
 
 .first-run-public-model-panel.is-authenticated {
   border-color: oklch(0.71 0.17 272 / 0.42);
-  background: oklch(0.23 0.045 273 / 0.72);
+  background: #ffffff;
 }
 
 .first-run-public-model-hero {
@@ -750,7 +769,7 @@
 }
 
 .first-run-owned-model-head label span {
-  color: oklch(0.84 0.02 273);
+  color: #334155;
   font-size: 0.7rem;
   font-weight: 650;
 }
@@ -811,7 +830,7 @@
 .first-run-field label {
   display: block;
   margin-bottom: 0.45rem;
-  color: oklch(0.84 0.02 273);
+  color: #334155;
   font-size: 0.74rem;
   font-weight: 650;
 }

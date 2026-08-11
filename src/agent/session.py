@@ -504,6 +504,7 @@ class AgentSession:
         external_ref: str = "",
 
         scope_hash: str = "",
+        project_name: str = "",
 
     ):
 
@@ -526,6 +527,7 @@ class AgentSession:
         self.external_ref: str = external_ref
 
         self.scope_hash: str = scope_hash
+        self.project_name: str = project_name.strip() or "未分类项目"
 
         if runtime_scope in {"interactive", "workflow"}:
             self.runtime_scope = runtime_scope
@@ -1390,6 +1392,8 @@ class AgentSession:
             "metadata": {"max_rounds": rounds},
 
             "agent_type": self.agent_type,
+
+            "project_name": self.project_name,
 
         }
 
@@ -2759,6 +2763,8 @@ class AgentSession:
 
             "agent_type": self.agent_type,
 
+            "project_name": self.project_name,
+
         }
 
         if self.workspace_path:
@@ -2931,6 +2937,7 @@ class AgentSession:
             "external_ref": self.external_ref,
 
             "scope_hash": self.scope_hash,
+            "project_name": self.project_name,
 
             "model_id": self.model_id,
 
@@ -2993,6 +3000,7 @@ class AgentSession:
             resource_owner=data.get("resource_owner", ""),
             external_ref=data.get("external_ref", ""),
             scope_hash=data.get("scope_hash", ""),
+            project_name=data.get("project_name", "未分类项目"),
         )
         session.node_id = data.get("node_id", "")
         session.model_id = data.get("model_id")

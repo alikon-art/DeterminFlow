@@ -8,10 +8,11 @@ import ToolListViewer from "../components/orchestration/ToolListViewer";
 import UserInjectionEditor from "../components/orchestration/UserInjectionEditor";
 import PreviewPanel from "../components/orchestration/PreviewPanel";
 import { OrchestrationSubTab } from "../types";
+import { getAgentDisplayName } from "../lib/agent-labels";
 
 const SUB_TABS: { key: OrchestrationSubTab; label: string; icon: typeof FileText }[] = [
-  { key: "prompts", label: "提示词 Sections", icon: FileText },
-  { key: "agents", label: "Agent 定义", icon: Bot },
+  { key: "prompts", label: "提示词片段", icon: FileText },
+  { key: "agents", label: "代理定义", icon: Bot },
   { key: "tools", label: "工具列表", icon: Wrench },
   { key: "user-injection", label: "用户消息注入", icon: User },
 ];
@@ -143,7 +144,7 @@ export default function OrchestrationPage() {
   }
 
   return (
-    <div ref={containerRef} className="h-[calc(100dvh-3.5rem)] flex" role="main" aria-label="Agent 编排配置">
+    <div ref={containerRef} className="h-[calc(100dvh-3.5rem)] flex" role="main" aria-label="代理编排配置">
       {/* Left: Editor Panel */}
       <div className="flex flex-col min-w-0 border-r border-border/30" style={{ width: `${leftRatio * 100}%` }}>
         {/* Sub Tabs */}
@@ -191,7 +192,7 @@ export default function OrchestrationPage() {
                       type="button"
                       onClick={() => setPromptTarget(tmpl)}
                       onContextMenu={(e) => handleTemplateContextMenu(e, tmpl)}
-                      aria-label={`选择模板 ${tmpl}`}
+                      aria-label={`选择模板 ${getAgentDisplayName(tmpl)}`}
                       aria-pressed={promptTarget === tmpl}
                       className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-indigo-500/30 focus-visible:outline-none ${
                         promptTarget === tmpl
@@ -199,7 +200,7 @@ export default function OrchestrationPage() {
                           : "text-muted-foreground hover:text-foreground"
                       }`}
                     >
-                      {tmpl}
+                      {getAgentDisplayName(tmpl)}
                     </button>
                   ))}
                 </div>

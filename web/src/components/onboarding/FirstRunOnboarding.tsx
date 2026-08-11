@@ -23,7 +23,7 @@ import {
   useState,
 } from "react";
 
-import { BRAND_MARK_DARK, PRODUCT_NAME } from "@/brand";
+import { BRAND_MARK, PRODUCT_NAME } from "@/brand";
 import { Switch } from "@/components/ui/switch";
 import type { PluginRecord } from "@/extensions/plugin-types";
 import type { ExtensionStatus } from "@/extensions/types";
@@ -46,8 +46,8 @@ import {
   shouldStartFirstRun,
 } from "./firstRunOnboardingModel";
 import {
+  completeDesktopOnboarding,
   ensureDesktopOnboardingStatus,
-  markDesktopOnboardingComplete,
 } from "./desktopOnboarding";
 import "./first-run-onboarding.css";
 import "./first-run-onboarding-support.css";
@@ -105,7 +105,7 @@ function WorkflowScene({ active, compact = false, pluginCount = 0 }: WorkflowSce
         <span className="first-run-core-node__orbit first-run-core-node__orbit--outer" />
         <span className="first-run-core-node__orbit first-run-core-node__orbit--inner" />
         <span className="first-run-core-node__mark">
-          <img src={BRAND_MARK_DARK} alt="" />
+          <img src={BRAND_MARK} alt="" />
         </span>
         <strong>Main</strong>
         <small>协调执行</small>
@@ -146,16 +146,20 @@ function OnboardingChrome({
   furthestStep,
   onStepChange,
   onSkip,
+  completing,
+  completionError,
 }: {
   step: number;
   furthestStep: number;
   onStepChange: (step: number) => void;
   onSkip: () => void | Promise<void>;
+  completing: boolean;
+  completionError: string;
 }) {
   return (
     <header className="first-run-chrome">
       <div className="first-run-brand">
-        <img src={BRAND_MARK_DARK} alt="" />
+        <img src={BRAND_MARK} alt="" />
         <span>{PRODUCT_NAME}</span>
       </div>
       <nav className="first-run-progress" aria-label="首次运行进度">
@@ -173,9 +177,18 @@ function OnboardingChrome({
           </button>
         ))}
       </nav>
-      <button type="button" className="first-run-skip" onClick={() => void onSkip()}>
-        跳过引导
-      </button>
+      <div className="first-run-skip-area">
+        {completionError ? <span role="alert">{completionError}</span> : null}
+        <button
+          type="button"
+          className="first-run-skip"
+          disabled={completing}
+          onClick={() => void onSkip()}
+        >
+          {completing ? <Loader2 className="first-run-spinner" size={14} /> : null}
+          {completing ? "正在保存" : "跳过引导"}
+        </button>
+      </div>
     </header>
   );
 }
@@ -454,9 +467,10 @@ function FirstRunExperience({
   currentMainModel,
   currentMainSessionId,
   onComplete,
-  completionError = "",
   initialStep = 0,
-}: OnboardingProps & { initialStep?: number }) {
+  completing = false,
+  completionError = "",
+}: OnboardingProps & { initialStep?: number; completing?: boolean; completionError?: string }) {
   const [step, setStep] = useState(initialStep);
   const [furthestStep, setFurthestStep] = useState(initialStep);
   const [requiredPluginId, setRequiredPluginId] = useState<string | null>(() => {
@@ -501,6 +515,8 @@ function FirstRunExperience({
         furthestStep={furthestStep}
         onStepChange={goTo}
         onSkip={onComplete}
+        completing={completing}
+        completionError={completionError}
       />
       {completionError ? (
         <p className="first-run-completion-error" role="alert">{completionError}</p>
@@ -537,7 +553,7 @@ function FirstRunExperience({
 function FirstRunBootstrap() {
   return (
     <div className="first-run-bootstrap" role="status" aria-label="正在准备 DeterminFlow">
-      <span><img src={BRAND_MARK_DARK} alt="" /></span>
+      <span><img src={BRAND_MARK} alt="" /></span>
       <strong>{PRODUCT_NAME}</strong>
     </div>
   );
@@ -550,6 +566,7 @@ export default function FirstRunOnboarding({ children }: { children: ReactNode }
     desktopRuntime || previewStep !== null ? "checking" : "app"
   ));
   const [data, setData] = useState<FirstRunData | null>(null);
+  const [completing, setCompleting] = useState(false);
   const [completionError, setCompletionError] = useState("");
 
   useEffect(() => {
@@ -612,16 +629,20 @@ export default function FirstRunOnboarding({ children }: { children: ReactNode }
   }, [desktopRuntime, mode, previewStep]);
 
   const complete = async () => {
+    if (completing) return;
+    setCompleting(true);
     setCompletionError("");
-    if (desktopRuntime && previewStep === null) {
-      try {
-        await markDesktopOnboardingComplete();
-      } catch (reason) {
-        setCompletionError(normalizeApiError(reason, "无法保存引导完成状态，请重试"));
-        return;
-      }
+    try {
+      await completeDesktopOnboarding({
+        desktopRuntime,
+        previewRequested: previewStep !== null,
+        showApp: () => setMode("app"),
+      });
+    } catch (reason) {
+      setCompletionError(normalizeApiError(reason, "无法保存引导状态，请重试"));
+    } finally {
+      setCompleting(false);
     }
-    setMode("app");
   };
 
   if (mode === "app") return children;
@@ -629,9 +650,10 @@ export default function FirstRunOnboarding({ children }: { children: ReactNode }
   return (
     <FirstRunExperience
       {...data}
-      completionError={completionError}
       initialStep={previewStep ?? 0}
       onComplete={complete}
+      completing={completing}
+      completionError={completionError}
     />
   );
 }

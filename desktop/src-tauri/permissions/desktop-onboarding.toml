@@ -1,0 +1,7 @@
+[[permission]]
+identifier = "allow-onboarding-status"
+description = "Enables the bundled loopback UI to read and write the desktop first-run onboarding state."
+commands.allow = [
+  "get_desktop_onboarding_status",
+  "set_desktop_onboarding_status",
+]
