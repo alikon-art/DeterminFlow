@@ -48,7 +48,7 @@ import { shouldShowModelSwitcher } from "../lib/model-options";
 import ChatWorkflowTasks, { upsertWorkflowTask } from "../components/workflow/ChatWorkflowTasks";
 
 import {
-  fetchSessionDetail, fetchSessionSystemPrompt, deleteSession, killSession,
+  fetchSessionDetail, fetchSessionSystemPrompt, deleteSession, deleteProject, killSession,
   abortSession, compressSession, createNewMainSession,
   fetchPresetPhrases, createPresetPhrase, updatePresetPhrase, deletePresetPhrase,
   listAllTasks,
@@ -323,9 +323,9 @@ export default function ChatPage() {
     const isMainSession = session?.type === "main";
     setConfirmDialog({
       open: true,
-      title: isMainSession ? "删除主会话" : "删除会话",
+      title: isMainSession ? "删除对话" : "删除会话",
       message: isMainSession
-        ? "确定删除此主会话吗？其全部子会话、关联工作流任务和 Agent 记录都会被永久删除。"
+        ? "确定删除此对话吗？只会删除当前对话及其子代理记录，不会删除同一项目中的其他对话。"
         : `确定要删除会话 ${sessionId} 吗？此操作不可恢复。`,
       onConfirm: async () => {
         try {
@@ -341,6 +341,26 @@ export default function ChatPage() {
       },
     });
   }, [sessions, targetSessionId, setViewingSessionId, loadSessions]);
+
+  const handleDeleteProject = useCallback((projectName: string) => {
+    setConfirmDialog({
+      open: true,
+      title: "删除项目",
+      message: `确定删除项目“${projectName}”吗？项目内所有对话、子代理记录和关联工作流任务都会被永久删除。`,
+      onConfirm: async () => {
+        try {
+          const result = await deleteProject(projectName);
+          if (result.deleted_session_ids?.includes(targetSessionId || "")) {
+            setViewingSessionId(null);
+            setViewingSession(null);
+          }
+          await loadSessions();
+        } catch {
+          setActionError("删除项目失败，请重试");
+        }
+      },
+    });
+  }, [targetSessionId, setViewingSessionId, loadSessions]);
 
   // 终止会话
   const handleKillSession = useCallback(async (sessionId: string, e: React.MouseEvent) => {
@@ -431,10 +451,10 @@ export default function ChatPage() {
   }, [editLabel, editContent, editingId]);
 
   // 新建主会话（支持指定 agent_type）
-  const handleCreateSession = useCallback(async (agentType?: string) => {
+  const handleCreateSession = useCallback(async (agentType?: string, projectName?: string) => {
     setActionError(null);
     try {
-      const result = await createNewMainSession(agentType);
+      const result = await createNewMainSession(agentType, projectName);
       await loadSessions();
       // 自动选中新建的会话
       if (result.session_id) {
@@ -801,6 +821,7 @@ export default function ChatPage() {
         onDeleteSession={handleDeleteSession}
         onKillSession={handleKillSession}
         onCreateSession={handleCreateSession}
+        onDeleteProject={handleDeleteProject}
         llmContext={llmContext}
         promptLoading={promptLoading}
         onRefreshPrompt={loadSystemPrompt}

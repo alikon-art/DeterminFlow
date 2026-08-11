@@ -17,6 +17,7 @@ import { ChevronDown, ChevronRight, Plus, Trash2, Eye, EyeOff, Info, Workflow } 
 import { Badge } from "@/components/ui/badge";
 import SortableCard from "./SortableCard";
 import { PromptSectionData } from "../../types";
+import { getSectionDisplayName } from "../../lib/agent-labels";
 
 interface Props {
   sections: PromptSectionData[];
@@ -164,7 +165,7 @@ export default function UserInjectionEditor({ sections, onSectionsChange, onSave
     <div className="space-y-2">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold text-slate-200">用户消息注入 Sections</h3>
+          <h3 className="text-sm font-semibold text-slate-200">用户消息注入</h3>
           <Badge variant="outline" className="text-xs text-cyan-400 border-cyan-500/30">
             {sections.filter((s) => s.enabled).length}/{sections.length}
           </Badge>
@@ -234,7 +235,7 @@ export default function UserInjectionEditor({ sections, onSectionsChange, onSave
                         type="button"
                         onClick={() => setExpandedSection(isExpanded ? null : section.name)}
                         aria-expanded={isExpanded}
-                        aria-label={`${isExpanded ? "折叠" : "展开"} ${section.name}`}
+                        aria-label={`${isExpanded ? "折叠" : "展开"} ${getSectionDisplayName(section.name)}`}
                         className="p-1 min-w-[44px] min-h-[44px] flex items-center justify-center text-muted-foreground hover:text-foreground cursor-pointer transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-cyan-500/30 focus-visible:outline-none"
                       >
                         {isExpanded ? <ChevronDown size={14} aria-hidden="true" /> : <ChevronRight size={14} aria-hidden="true" />}
@@ -262,9 +263,9 @@ export default function UserInjectionEditor({ sections, onSectionsChange, onSave
                           onClick={() => startEditingName(section.name)}
                           onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") startEditingName(section.name); }}
                           title="点击编辑名称"
-                          aria-label={`编辑 ${section.name} 名称`}
+                          aria-label={`编辑 ${getSectionDisplayName(section.name)} 名称`}
                         >
-                          {section.name}
+                          {getSectionDisplayName(section.name)}
                         </span>
                       )}
 

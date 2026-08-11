@@ -13,6 +13,7 @@ import {
   RuleGroup,
   TemplateVariable,
 } from "../../types";
+import { getAgentDisplayName, getSectionDisplayName } from "../../lib/agent-labels";
 
 const PLACEHOLDER_RE = /\{\{([\w-]+)\}\}/g;
 
@@ -133,15 +134,15 @@ export default function PreviewPanel({
         </div>
         {activeTab === "prompts" && (
           <div className="flex items-center gap-3 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1"><Hash size={12} aria-hidden="true" /> {enabledSections.length} sections</span>
-            <span className="flex items-center gap-1"><FileText size={12} aria-hidden="true" /> ~{totalTokens} tokens</span>
+            <span className="flex items-center gap-1"><Hash size={12} aria-hidden="true" /> {enabledSections.length} 个片段</span>
+            <span className="flex items-center gap-1"><FileText size={12} aria-hidden="true" /> 约 {totalTokens} 个令牌</span>
           </div>
         )}
         {activeTab === "agents" && (
           <p className="text-xs text-muted-foreground">
             {selectedAgent
-              ? `${selectedAgent.agent_type} — ${agentToolList.length} 个可用工具 · ${selectedAgent.disallowed_tools?.length || 0} 个禁用`
-              : "← 点击左侧 Agent 卡片查看详情"}
+              ? `${getAgentDisplayName(selectedAgent.agent_type)} — ${agentToolList.length} 个可用工具 · ${selectedAgent.disallowed_tools?.length || 0} 个禁用`
+              : "← 点击左侧代理卡片查看详情"}
           </p>
         )}
         {activeTab === "tools" && (
@@ -155,12 +156,12 @@ export default function PreviewPanel({
       {activeTab === "prompts" && (
         <div className="px-4 py-2 border-b border-border/30 flex-shrink-0">
           <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
-            <span>Token 使用</span>
+            <span>令牌使用</span>
             <span className="tabular-nums">
               {totalTokens} / {DEFAULT_MAX_CONTEXT_TOKENS}
             </span>
           </div>
-          <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden" role="progressbar" aria-valuenow={totalTokens} aria-valuemin={0} aria-valuemax={DEFAULT_MAX_CONTEXT_TOKENS} aria-label={`Token 使用: ${totalTokens}/${DEFAULT_MAX_CONTEXT_TOKENS}`}>
+          <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden" role="progressbar" aria-valuenow={totalTokens} aria-valuemin={0} aria-valuemax={DEFAULT_MAX_CONTEXT_TOKENS} aria-label={`令牌使用: ${totalTokens}/${DEFAULT_MAX_CONTEXT_TOKENS}`}>
             <div
               className={`h-full rounded-full transition-all duration-300 ${
                 totalTokens > DEFAULT_MAX_CONTEXT_TOKENS * 0.75
@@ -180,7 +181,7 @@ export default function PreviewPanel({
         <div className="px-4 py-3">
           {/* === Prompt Preview === */}
           {activeTab === "prompts" && (
-            <div className="space-y-1.5" role="list" aria-label="已启用的 prompt sections">
+            <div className="space-y-1.5" role="list" aria-label="已启用的提示词片段">
               {enabledSections.map((sec, i) => {
                 const defaultColor = SEC_COLORS[i % SEC_COLORS.length];
                 const wfColor = "bg-violet-500/[0.06] border border-violet-500/20";
@@ -192,7 +193,7 @@ export default function PreviewPanel({
                   >
                     <div className="flex items-center justify-between mb-1">
                       <span className="flex items-center gap-1.5">
-                        <span className="text-xs font-medium text-slate-400">{sec.name}</span>
+                        <span className="text-xs font-medium text-slate-400">{getSectionDisplayName(sec.name)}</span>
                         {sec.workflow_only && (
                           <Badge variant="outline" className="text-xs border-violet-500/40 text-violet-400">
                             工作流专属
@@ -201,7 +202,7 @@ export default function PreviewPanel({
                       </span>
                       <Badge variant="outline" className="text-xs">{sec.token_estimate}t</Badge>
                     </div>
-                    <pre className="text-xs text-slate-300 leading-relaxed whitespace-pre-wrap break-words font-sans" aria-label={`${sec.name} 内容预览`}>
+                    <pre className="text-xs text-slate-300 leading-relaxed whitespace-pre-wrap break-words font-sans" aria-label={`${getSectionDisplayName(sec.name)} 内容预览`}>
                       <HighlightedContent
                         content={sec.content}
                         templateVariables={templateVariables}
@@ -218,14 +219,14 @@ export default function PreviewPanel({
 
           {/* === Agent Preview (增强版) === */}
           {activeTab === "agents" && (
-            <div role="region" aria-label="Agent 预览">
+            <div role="region" aria-label="代理预览">
               {selectedAgent ? (
                 <div className="space-y-4">
                   {/* Agent 基本信息卡片 */}
                   <div className="bg-slate-800/80 border border-border/40 rounded-lg px-3 py-2.5">
                     <div className="flex items-center gap-2 mb-1">
                       <Bot size={14} className="text-indigo-500" aria-hidden="true" />
-                      <span className="text-xs font-semibold text-slate-200">{selectedAgent.agent_type}</span>
+                      <span className="text-xs font-semibold text-slate-200">{getAgentDisplayName(selectedAgent.agent_type)}</span>
                       <Badge variant="outline" className="text-xs ml-auto">
                         {selectedAgent.tools?.includes("*") ? "全部工具" : selectedAgent.tools ? `${selectedAgent.tools.length} 个工具` : "仅通信"}
                       </Badge>
@@ -233,8 +234,8 @@ export default function PreviewPanel({
                     <p className="text-xs text-muted-foreground">{selectedAgent.description}</p>
                     <div className="grid grid-cols-2 gap-x-4 gap-y-1 mt-2 text-xs text-muted-foreground">
                       <span>轮次: <span className="text-slate-300">{selectedAgent.max_turns}</span></span>
-                      <span>模型: <span className="text-slate-300">{selectedAgent.model || "继承主 Agent"}</span></span>
-                      <span>Workspace: <span className="text-slate-300">
+                      <span>模型: <span className="text-slate-300">{selectedAgent.model || "继承主代理"}</span></span>
+                      <span>工作区: <span className="text-slate-300">
                         {selectedAgent.copy_main_workspace === null ? "继承全局" : selectedAgent.copy_main_workspace ? "强制复制" : "不复制"}
                       </span></span>
                     </div>
@@ -265,7 +266,7 @@ export default function PreviewPanel({
                       <div className="bg-slate-800/40 rounded px-2 py-2">
                         <p className="text-xs text-muted-foreground flex items-center gap-1">
                           <AlertCircle size={12} className="text-amber-500" aria-hidden="true" />
-                          当前工具列表为空，请在 Agent 定义中配置工具白名单
+                          当前工具列表为空，请在代理定义中配置工具白名单
                         </p>
                         {!selectedAgent.tools && (
                           <p className="text-xs text-muted-foreground/60 mt-1">提示：tools 为 null 时仅含通信工具，设为 ["*"] 可使用全部工具</p>
@@ -353,7 +354,7 @@ export default function PreviewPanel({
               ) : (
                 <div className="flex flex-col items-center justify-center py-12 text-muted-foreground" role="status">
                   <Bot size={32} className="mb-3 opacity-30" aria-hidden="true" />
-                  <p className="text-xs">点击左侧 Agent 卡片查看详情</p>
+                  <p className="text-xs">点击左侧代理卡片查看详情</p>
                   <p className="text-xs opacity-50 mt-1">可查看完整配置、工具列表、可见性等信息</p>
                 </div>
               )}

@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight, Wrench, Layers, Edit3 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { ToolInfo, ToolGroup, AgentDefinitionData } from "../../types";
 import ToolGroupEditor from "./ToolGroupEditor";
+import { getAgentDisplayName } from "../../lib/agent-labels";
 
 interface Props {
   tools: ToolInfo[];
@@ -158,7 +159,7 @@ export default function ToolListViewer({ tools, groups, agents, onReload }: Prop
                 <th scope="col" className="text-left py-1.5 px-2 text-muted-foreground font-medium sticky left-0 bg-slate-800/90">工具</th>
                 {agents.map((a) => (
                   <th scope="col" key={a.agent_type} className="text-center py-1.5 px-2 text-indigo-500 font-medium whitespace-nowrap">
-                    {a.agent_type}
+                    {getAgentDisplayName(a.agent_type)}
                   </th>
                 ))}
               </tr>

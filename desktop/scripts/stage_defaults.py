@@ -59,15 +59,21 @@ SENSITIVE_KEYS = {
 
 
 def _read_git_json(repo_root: Path, relative_path: str) -> Any:
-    result = subprocess.run(
-        ["git", "show", f"HEAD:{relative_path}"],
-        cwd=repo_root,
-        check=True,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-    )
-    return json.loads(result.stdout)
+    try:
+        result = subprocess.run(
+            ["git", "show", f"HEAD:{relative_path}"],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+        return json.loads(result.stdout)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        # 非 git 副本（如 OneDrive 同步目录）无 HEAD 可读，回退到工作区文件。
+        # 明文密钥校验由调用方的 _validate_no_plaintext_secrets 统一兜底。
+        source = repo_root / relative_path
+        return json.loads(source.read_text(encoding="utf-8"))
 
 
 def _validate_no_plaintext_secrets(value: Any, location: str = "root") -> None:

@@ -32,7 +32,7 @@ export default function StatsCards({ status }: StatsCardsProps) {
       borderColor: "border-indigo-500/20",
     },
     {
-      label: "Temperature",
+      label: "温度",
       value: status.temperature.toFixed(1),
       icon: Thermometer,
       iconColor: "text-cyan-500",
@@ -55,7 +55,7 @@ export default function StatsCards({ status }: StatsCardsProps) {
         return (
           <div
             key={card.label}
-            className={`p-4 rounded-lg bg-slate-800/80 border ${card.borderColor} hover:scale-[1.02] transition-transform`}
+            className={`p-4 rounded-lg bg-white border ${card.borderColor} hover:shadow-sm transition-shadow`}
             role="article"
             aria-label={`${card.label}: ${card.value}${card.suffix || ''}`}
           >

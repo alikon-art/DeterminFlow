@@ -31,3 +31,20 @@ export async function markDesktopOnboardingComplete(
     status: DESKTOP_ONBOARDING_COMPLETE_VALUE,
   });
 }
+
+export async function completeDesktopOnboarding({
+  desktopRuntime,
+  previewRequested,
+  showApp,
+  invoke = invokeDesktop,
+}: {
+  desktopRuntime: boolean;
+  previewRequested: boolean;
+  showApp: () => void;
+  invoke?: InvokeDesktop;
+}): Promise<void> {
+  if (desktopRuntime && !previewRequested) {
+    await markDesktopOnboardingComplete(invoke);
+  }
+  showApp();
+}

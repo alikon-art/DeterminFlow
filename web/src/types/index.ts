@@ -12,6 +12,7 @@ export interface Session {
   last_message: string;
   agent_type?: string;
   workspace_path?: string;
+  project_name?: string;
 }
 
 export interface SessionDetail extends Session {

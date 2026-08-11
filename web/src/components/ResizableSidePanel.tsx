@@ -15,7 +15,8 @@ interface ResizableSidePanelProps {
   onViewSession: (sessionId: string) => void;
   onDeleteSession: (sessionId: string, e: React.MouseEvent) => void;
   onKillSession: (sessionId: string, e: React.MouseEvent) => void;
-  onCreateSession: (agentType?: string) => void;
+  onCreateSession: (agentType?: string, projectName?: string) => void;
+  onDeleteProject: (projectName: string) => void;
   llmContext: Awaited<ReturnType<typeof fetchSessionSystemPrompt>> | null;
   promptLoading: boolean;
   onRefreshPrompt: () => void;
@@ -33,6 +34,7 @@ function ResizableSidePanel({
   onDeleteSession,
   onKillSession,
   onCreateSession,
+  onDeleteProject,
   llmContext,
   promptLoading,
   onRefreshPrompt,
@@ -146,6 +148,7 @@ function ResizableSidePanel({
               onDeleteSession={onDeleteSession}
               onKillSession={onKillSession}
               onCreateSession={onCreateSession}
+              onDeleteProject={onDeleteProject}
             />
           </div>
         )}

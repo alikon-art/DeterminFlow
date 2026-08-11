@@ -239,7 +239,12 @@ class SessionManager(SessionLifecycleMixin):
             workflow_id=workflow_id,
         ))
 
-    async def create_main_session(self, llm_client=None, agent_type: str = "main") -> dict:
+    async def create_main_session(
+        self,
+        llm_client=None,
+        agent_type: str = "main",
+        project_name: str = "未分类项目",
+    ) -> dict:
         """创建新的主会话（用于前端主动创建新会话）。
 
         支持指定任意 agent_type（如 "coder"、"researcher" 等），
@@ -267,6 +272,7 @@ class SessionManager(SessionLifecycleMixin):
             session_type="main",
             agent_type=agent_type,
             model_params=agent_params,
+            project_name=project_name,
         )
 
         # 只记录用户或 Agent 明确选择的模型。null 表示调用时跟随当前默认模型，

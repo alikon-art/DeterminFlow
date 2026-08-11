@@ -1,13 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "desktop-onboarding",
-  "description": "Allow the bundled loopback UI to persist first-run onboarding state.",
+  "description": "Allow the bundled loopback UI to read and write the desktop first-run onboarding state.",
   "windows": ["main"],
   "remote": {
     "urls": ["http://127.0.0.1:*/*"]
   },
   "permissions": [
-    "allow-get-desktop-onboarding-status",
-    "allow-set-desktop-onboarding-status"
+    "allow-onboarding-status"
   ]
 }

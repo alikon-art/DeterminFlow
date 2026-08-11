@@ -41,7 +41,7 @@ pub fn set_desktop_onboarding_status(app: AppHandle, status: String) -> Result<(
         .parent()
         .ok_or_else(|| "无法解析桌面引导状态目录".to_string())?;
     fs::create_dir_all(directory).map_err(|error| format!("无法创建桌面引导状态目录: {error}"))?;
-    fs::write(path, status).map_err(|error| format!("无法保存桌面引导状态: {error}"))
+    fs::write(&path, status).map_err(|error| format!("无法保存桌面引导状态: {error}"))
 }
 
 #[cfg(test)]

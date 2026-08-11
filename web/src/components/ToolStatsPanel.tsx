@@ -1,7 +1,7 @@
 import { ToolInfo, EventBusStats } from "../types";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { Badge } from "@/components/ui/badge";
-import { toolGroupLabel, toolGroupColor } from "../lib/utils-helpers";
+import { toolGroupLabel, toolGroupColor, getToolDisplayName } from "../lib/utils-helpers";
 import { Wrench, BarChart3 } from "lucide-react";
 
 interface ToolStatsPanelProps {
@@ -13,12 +13,12 @@ export default function ToolStatsPanel({ tools, stats }: ToolStatsPanelProps) {
   // Tool call frequency data
   const freqData = Object.entries(stats.tool_call_counts)
     .sort(([, a], [, b]) => b - a)
-    .map(([name, count]) => ({ name, count }));
+    .map(([name, count]) => ({ name: getToolDisplayName(name), count }));
 
   return (
     <section aria-label="工具统计" className="grid grid-cols-1 md:grid-cols-2 gap-4">
       {/* Tool Call Frequency */}
-      <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-4">
+      <div className="bg-white border border-slate-200 rounded-lg p-4">
         <h3 className="text-sm font-medium text-muted-foreground mb-3 flex items-center gap-2">
           <BarChart3 className="w-4 h-4" aria-hidden="true" />
           工具调用频率
@@ -31,11 +31,12 @@ export default function ToolStatsPanel({ tools, stats }: ToolStatsPanelProps) {
                 <YAxis type="category" dataKey="name" tick={{ fontSize: 12, fill: "#94a3b8" }} width={120} />
                 <Tooltip
                   contentStyle={{
-                    background: "#1e293b",
-                    border: "1px solid #475569",
+                    background: "#ffffff",
+                    border: "1px solid #e2e8f0",
                     borderRadius: "8px",
-                    color: "#f1f5f9",
+                    color: "#1f2937",
                     fontSize: "12px",
+                    boxShadow: "0 8px 24px rgb(15 23 42 / 0.08)",
                   }}
                 />
                 <Bar dataKey="count" fill="#F59E0B" radius={[0, 4, 4, 0]} />
@@ -50,7 +51,7 @@ export default function ToolStatsPanel({ tools, stats }: ToolStatsPanelProps) {
       </div>
 
       {/* Registered Tools List */}
-      <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-4">
+      <div className="bg-white border border-slate-200 rounded-lg p-4">
         <h3 className="text-sm font-medium text-muted-foreground mb-3 flex items-center gap-2">
           <Wrench className="w-4 h-4" aria-hidden="true" />
           已注册工具 ({tools.length})
@@ -60,11 +61,11 @@ export default function ToolStatsPanel({ tools, stats }: ToolStatsPanelProps) {
             <div
               key={tool.name}
               role="listitem"
-              className="flex items-start gap-2 p-2 rounded-lg bg-slate-900/40 hover:bg-slate-900/60 transition-colors duration-200"
+              className="flex items-start gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 hover:border-blue-200 hover:bg-blue-50/40 transition-colors duration-200"
             >
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-mono font-medium text-foreground">{tool.name}</span>
+                  <span className="text-xs font-mono font-medium text-foreground">{getToolDisplayName(tool.name)}</span>
                   <Badge
                     variant="outline"
                     className={`text-xs px-1 py-0 ${toolGroupColor[tool.group_id] || ""}`}

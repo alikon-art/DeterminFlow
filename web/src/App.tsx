@@ -3,7 +3,7 @@ import { MessageSquare, LayoutDashboard, GitBranch, Users, Layers, Settings, Boo
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToastProvider } from "@/components/ui/toast-provider";
 import { CORE_TAB_IDS, isCoreTabId, type CoreTabId } from "@/core-tabs";
-import { BRAND_MARK_DARK, PRODUCT_NAME } from "@/brand";
+import { BRAND_MARK, PRODUCT_NAME } from "@/brand";
 import { useGlobalEvents } from "./hooks/useGlobalEvents";
 import { patchSearchParams, useUrlParam } from "./hooks/useUrlParam";
 import { useExtensions } from "./extensions/context-value";
@@ -42,8 +42,8 @@ const CORE_TAB_METADATA: Record<CoreTabId, Omit<TabConfig, "value">> = {
   orchestration: { icon: Layers, label: "编排", activeClass: "data-[state=active]:bg-amber-500/20 data-[state=active]:text-amber-400" },
   workflow: { icon: Workflow, label: "工作流", activeClass: "data-[state=active]:bg-purple-500/20 data-[state=active]:text-purple-400" },
   cron: { icon: Clock, label: "定时", activeClass: "data-[state=active]:bg-amber-500/20 data-[state=active]:text-amber-400" },
-  skills: { icon: BookOpen, label: "Skills", activeClass: "data-[state=active]:bg-pink-500/20 data-[state=active]:text-pink-400" },
-  rules: { icon: BookOpen, label: "Rules", activeClass: "data-[state=active]:bg-red-500/20 data-[state=active]:text-red-400" },
+  skills: { icon: BookOpen, label: "技能", activeClass: "data-[state=active]:bg-pink-500/20 data-[state=active]:text-pink-400" },
+  rules: { icon: BookOpen, label: "规则", activeClass: "data-[state=active]:bg-red-500/20 data-[state=active]:text-red-400" },
   "system-prompt": { icon: FileText, label: "系统提示词", activeClass: "data-[state=active]:bg-teal-500/20 data-[state=active]:text-teal-400" },
   settings: { icon: Settings, label: "配置", activeClass: "data-[state=active]:bg-indigo-500/20 data-[state=active]:text-indigo-400" },
   extensions: { icon: Boxes, label: "插件", activeClass: "data-[state=active]:bg-cyan-500/20 data-[state=active]:text-cyan-400" },
@@ -140,19 +140,19 @@ function App() {
     <DesktopUpdateProvider>
       <ToastProvider>
         <FirstRunOnboarding>
-          <div className="flex h-dvh flex-col overflow-hidden bg-slate-900">
+          <div className="theme-light flex h-dvh flex-col overflow-hidden bg-stone-50 text-slate-900">
             {/* Top Navigation Bar */}
-            <header className="fixed top-0 left-0 right-0 z-50 h-14 bg-slate-800/80 backdrop-blur-sm border-b border-slate-700/50">
+            <header className="fixed top-0 left-0 right-0 z-50 h-14 border-b border-slate-200 bg-white">
               <div className="h-full flex items-center gap-3 px-4">
                 {/* Brand */}
                 <div className="flex shrink-0 items-center gap-3">
                   <img
-                    src={BRAND_MARK_DARK}
+                    src={BRAND_MARK}
                     alt={PRODUCT_NAME}
                     className="h-8 w-8 shrink-0"
                   />
                   <h1
-                    className="hidden text-lg font-semibold tracking-tight text-slate-100 2xl:block"
+                    className="hidden text-sm font-semibold tracking-tight text-slate-950 2xl:block"
                     aria-hidden="true"
                   >
                     {PRODUCT_NAME}
@@ -162,14 +162,14 @@ function App() {
                 {/* Tabs */}
                 <Tabs className="min-w-0 flex-1" value={activeTab} onValueChange={handleTabChange}>
                   <div className="overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                    <TabsList className="w-max justify-start bg-slate-800/80 border border-slate-700/50" role="tablist" aria-label="主导航">
+                    <TabsList className="h-10 w-max justify-start gap-1 rounded-md bg-slate-50 p-1" role="tablist" aria-label="主导航">
                       {tabs.map((tab) => {
                         const Icon = tab.icon;
                         return (
                           <TabsTrigger
                             key={tab.value}
                             value={tab.value}
-                            className={`gap-2 ${tab.activeClass}`}
+                            className={`h-8 gap-2 rounded px-2.5 text-xs text-slate-600 shadow-none hover:bg-white hover:text-slate-950 data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:shadow-sm ${tab.activeClass}`}
                             role="tab"
                             aria-selected={activeTab === tab.value}
                           >

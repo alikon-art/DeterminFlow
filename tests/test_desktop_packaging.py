@@ -55,6 +55,7 @@ def test_tauri_bundle_is_a_per_user_nsis_installer() -> None:
     nsis = bundle["windows"]["nsis"]
 
     assert config["productName"] == "DeterminFlow"
+    assert config["build"]["frontendDist"] == "../../web/dist"
     assert bundle["targets"] == ["nsis"]
     assert bundle["createUpdaterArtifacts"] is True
     assert bundle["icon"] == ["icons/icon.ico", "icons/icon.png"]
