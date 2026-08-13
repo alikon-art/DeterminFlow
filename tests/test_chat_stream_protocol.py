@@ -994,7 +994,10 @@ def test_abort_during_pre_stream_compression_never_starts_graph_or_stream():
         assert session.status == expected_status
 
 
-def test_terminal_errors_emit_authoritative_history_after_rollback():
+def test_errors_emit_authoritative_history_after_rollback():
+    """主会话失败（RuntimeError / BadRequestError）不报废：回滚该轮、事件
+    terminal=False、状态保持 running，用户可原样重发。"""
+
     async def scenario(error: Exception):
         partial_chunk = SimpleNamespace(content="partial", additional_kwargs={})
         graph = _EventGraph([
@@ -1031,10 +1034,7 @@ def test_terminal_errors_emit_authoritative_history_after_rollback():
 
         session.async_save = no_save
         session._check_and_compress_messages = no_compress
-        try:
-            await session.send_message("new question", capture, max_rounds=1)
-        except type(error):
-            pass
+        await session.send_message("new question", capture, max_rounds=1)
         return session, emitted, record_when_error_emitted
 
     bad_response = httpx.Response(
@@ -1052,7 +1052,8 @@ def test_terminal_errors_emit_authoritative_history_after_rollback():
     for error in errors:
         session, emitted, record_when_error_emitted = asyncio.run(scenario(error))
         terminal = next(event for event in emitted if event["type"] == "error")
-        assert terminal["terminal"] is True
+        # 修复后：主会话失败不报废——terminal=False、状态 running、历史已回滚
+        assert terminal["terminal"] is False
         assert terminal["messages"] == expected_history
         assert record_when_error_emitted == [[
             {"id": "system", "type": "system_prompt", "content": "hidden"},
@@ -1062,7 +1063,7 @@ def test_terminal_errors_emit_authoritative_history_after_rollback():
             {"id": "system", "type": "system_prompt", "content": "hidden"},
             *expected_history,
         ]
-        assert session.status == "error"
+        assert session.status == "running"
 
 
 def test_execute_wrapper_does_not_duplicate_session_terminal_error(monkeypatch):

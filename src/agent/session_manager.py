@@ -22,6 +22,7 @@ from src.agent.session_catalog import SessionCatalog
 from src.agent.session_lifecycle import SessionLifecycleMixin
 from src.core.change_broadcaster import ChangeBroadcaster
 from langgraph.errors import GraphRecursionError
+from langchain_core.messages import SystemMessage
 
 from src.core.utils import is_visible_to_frontend
 from src.extension_api import PromptContextRequest
@@ -239,7 +240,7 @@ class SessionManager(SessionLifecycleMixin):
             workflow_id=workflow_id,
         ))
 
-    async def create_main_session(self, llm_client=None, agent_type: str = "main") -> dict:
+    async def create_main_session(self, llm_client=None, agent_type: str = "main", from_session_id: str | None = None) -> dict:
         """创建新的主会话（用于前端主动创建新会话）。
 
         支持指定任意 agent_type（如 "coder"、"researcher" 等），
@@ -247,6 +248,9 @@ class SessionManager(SessionLifecycleMixin):
 
         多 main 并存：旧主会话不会被停止，新老 main 同时运行。
         通过 PromptBuilder + ToolAssembler 统一流程。
+
+        from_session_id: 可选。指定后新主会话继承该主会话的对话上下文
+        （lc_messages 对话部分）与 workspace_path，实现"新会话接手旧会话工作"。
         """
         from src.agent.definition import get_agent_definition
 
@@ -306,6 +310,33 @@ class SessionManager(SessionLifecycleMixin):
                 )
         else:
             new_session.system_prompt = self._build_main_prompt_fallback(new_session)
+
+        # 3.5 继承旧会话上下文（from_session_id：新主会话接手旧会话的对话与工作区）
+        if from_session_id:
+            source = self.get_session(from_session_id)
+            if source is not None and source.session_type == "main":
+                inherited = [
+                    m for m in source.lc_messages
+                    if not isinstance(m, SystemMessage)
+                ]
+                if inherited:
+                    new_session.lc_messages.extend(inherited)
+                if not new_session.workspace_path and source.workspace_path:
+                    new_session.workspace_path = source.workspace_path
+                if source.record:
+                    new_session.record = [
+                        r for r in source.record
+                        if isinstance(r, dict) and r.get("type") not in ("system",)
+                    ]
+                logger.info(
+                    f"新主会话 {new_session.session_id} 继承自 {from_session_id}: "
+                    f"{len(inherited)} 条对话消息, "
+                    f"workspace={new_session.workspace_path or '默认'}"
+                )
+            else:
+                logger.warning(
+                    f"from_session_id={from_session_id} 不是有效主会话，跳过继承"
+                )
 
         # 4. 注册 session
         self.register_main(new_session)
@@ -828,6 +859,46 @@ class SessionManager(SessionLifecycleMixin):
     # 统一消息发送入口
     # ============================================================
 
+    async def recover_session(self, session_id: str) -> dict:
+        """恢复 error 主会话：重编译 Graph、状态回 running，可继续对话。
+
+        修复：此前 LLM 瞬态失败会把主会话置为 error 终态且无恢复入口，
+        只能新建会话。本方法让 error 主会话回到可发送状态（回滚已在
+        _invoke_graph 完成，消息历史保持干净）。
+        """
+        session = self.sessions.get(session_id)
+        if not session:
+            return {"success": False, "message": f"未找到会话 {session_id}"}
+        if session.session_type != "main":
+            return {"success": False, "message": "仅支持恢复主会话"}
+        if session.status != "error":
+            return {"success": True, "message": "会话无需恢复"}
+
+        from src.core.llm_client import create_startup_llm
+
+        async with session._invoke_lock:
+            if session.invocation_active:
+                return {"success": False, "message": "会话正在生成中，请稍后恢复"}
+            # 重建 LLM（model_id 为空时跟随当前默认模型）并重编译 Graph
+            llm = create_startup_llm(
+                model_override=session.model_id,
+                streaming=True,
+                model_params=session.model_params,
+            )
+            session.setup_graph(llm=llm, tools=session.tools)
+            session.status = "running"
+            session.last_error = None
+            session.updated_at = datetime.now(timezone.utc).isoformat()
+            await session.async_save()
+
+        _try_emit_event({
+            "type": "session_update",
+            "action": "status_changed",
+            "session_id": session_id,
+            "status": "running",
+        })
+        return {"success": True, "message": "会话已恢复，可以继续对话"}
+
     async def send_message_to_session(
         self,
         session_id: str,
@@ -858,7 +929,12 @@ class SessionManager(SessionLifecycleMixin):
             return {"success": False, "message": f"会话 {session_id} 的 Graph 未初始化"}
 
         if session.status == "error":
-            return {"success": False, "message": f"会话 {session_id} 状态为 error，无法发送消息"}
+            # 修复：主会话 error 自动恢复后继续发送；子会话保持拒绝（workflow 场景）
+            if session.session_type == "main":
+                await self.recover_session(session_id)
+                session = self.sessions.get(session_id)
+            else:
+                return {"success": False, "message": f"会话 {session_id} 状态为 error，无法发送消息"}
 
         # 如果当前正在 streaming，等待一下（或拒绝）
         if session.status == "streaming":
@@ -907,7 +983,12 @@ class SessionManager(SessionLifecycleMixin):
             return {"success": False, "message": f"会话 {session_id} 的 Graph 未初始化"}
 
         if session.status == "error":
-            return {"success": False, "message": f"会话 {session_id} 状态为 error，无法编辑消息"}
+            # 修复：主会话 error 自动恢复后继续编辑；子会话保持拒绝
+            if session.session_type == "main":
+                await self.recover_session(session_id)
+                session = self.sessions.get(session_id)
+            else:
+                return {"success": False, "message": f"会话 {session_id} 状态为 error，无法编辑消息"}
 
         if session.status == "streaming":
             return {"success": False, "message": f"会话 {session_id} 正在流式输出中，无法编辑消息"}

@@ -19,6 +19,11 @@ from src.prompts.compressor_prompts import build_compressor_prompt
 
 logger = logging.getLogger(__name__)
 
+# 修复：摘要 prompt 单条消息长度上限（字符）。tool 结果上限更严，
+# 因为工作流工具结果可能达到数十万字符。
+MAX_MESSAGE_CHARS = 3000
+MAX_TOOL_RESULT_CHARS = 1500
+
 
 class FullCompactStrategy:
     """
@@ -84,7 +89,9 @@ class FullCompactStrategy:
 
         if not summary:
             logger.warning("摘要生成失败，返回原始消息")
-            return messages
+            # 修复：失败兜底——截断超长消息后再返回。否则超限上下文原样保留，
+            # 下次压缩同样失败，会话因 400 超限报废（曾实测 130 万 token）。
+            return self._truncate_oversized(messages)
 
         # 构建新messages
         new_messages = self._build_new_messages(
@@ -235,6 +242,20 @@ class FullCompactStrategy:
             role = self._get_message_role(msg)
             msg_content = msg.content if isinstance(msg.content, str) else str(msg.content)
 
+            # 修复：摘要 prompt 截断超长消息——此前巨型 tool 结果（可达 60 万字符）
+            # 全文拼进摘要 prompt，使摘要生成请求本身超限（实测 165 万 token > 104 万
+            # 上限）→ 压缩失败 → 上下文永远无法瘦身 → 会话 400 超限报废。
+            if role == "tool" and len(msg_content) > MAX_TOOL_RESULT_CHARS:
+                msg_content = (
+                    msg_content[:MAX_TOOL_RESULT_CHARS]
+                    + f"\n...[工具结果过长已截断，原 {len(msg_content)} 字符]"
+                )
+            elif len(msg_content) > MAX_MESSAGE_CHARS:
+                msg_content = (
+                    msg_content[:MAX_MESSAGE_CHARS]
+                    + f"\n...[消息过长已截断，原 {len(msg_content)} 字符]"
+                )
+
             # 添加角色标识
             if role == "user":
                 content_parts.append(f"[用户消息]\n{msg_content}")
@@ -260,6 +281,41 @@ class FullCompactStrategy:
     def _get_message_role(self, msg: BaseMessage) -> str:
         """获取消息角色（委托给公共函数）"""
         return get_message_role(msg)
+
+    def _truncate_oversized(
+        self, messages: List[BaseMessage],
+    ) -> List[BaseMessage]:
+        """摘要失败兜底：把超长消息截断后返回，让上下文能瘦下来。"""
+        import copy as _copy
+
+        truncated_count = 0
+        cleaned: List[BaseMessage] = []
+        for msg in messages:
+            role = self._get_message_role(msg)
+            content = msg.content if isinstance(msg.content, str) else None
+            limit = (
+                MAX_TOOL_RESULT_CHARS if role == "tool" else MAX_MESSAGE_CHARS
+            )
+            if content is not None and len(content) > limit:
+                copy = _copy.copy(msg)
+                copy.content = (
+                    content[:limit]
+                    + f"\n...[内容过长已截断，原 {len(content)} 字符]"
+                )
+                cleaned.append(copy)
+                truncated_count += 1
+            else:
+                cleaned.append(msg)
+        if truncated_count:
+            logger.warning(
+                "摘要失败兜底截断 %d 条超长消息（合计约 %d 字符）",
+                truncated_count,
+                sum(
+                    len(m.content) if isinstance(m.content, str) else 0
+                    for m in messages
+                ),
+            )
+        return cleaned
 
     def _extract_summary(self, content: str) -> Optional[str]:
         """

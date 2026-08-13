@@ -61,6 +61,7 @@ class SendMessageRequest(BaseModel):
 class CreateMainSessionRequest(BaseModel):
 
     agent_type: str = "main"
+    from_session_id: str | None = None
 
 
 class UpdateSessionModelRequest(BaseModel):
@@ -473,10 +474,12 @@ async def delete_session(session_id: str, request: Request):
 
 @router.post("/sessions/main/new")
 async def create_new_main_session(body: CreateMainSessionRequest, request: Request):
-    """创建新的主会话（前端主动触发），支持指定 agent_type"""
+    """创建新的主会话（前端主动触发），支持指定 agent_type 与 from_session_id（继承旧会话上下文）"""
     sm = _get_session_manager(request)
     llm = getattr(request.app.state, "llm", None)
-    result = await sm.create_main_session(llm_client=llm, agent_type=body.agent_type)
+    result = await sm.create_main_session(
+        llm_client=llm, agent_type=body.agent_type, from_session_id=body.from_session_id
+    )
     return result
 
 

@@ -129,7 +129,17 @@ async def _validate_session(session_mgr, session_id: str, action_label: str):
     if session.compiled_graph is None:
         return None, {"type": "error", "message": f"会话 {session_id} Graph 未初始化", "session_id": session_id, "terminal": False}
     if session.status == "error":
-        return None, {"type": "error", "message": f"会话 {session_id} 状态为 error，无法{action_label}", "session_id": session_id, "terminal": False}
+        # 修复：主会话 error 自动恢复后继续操作；子会话保持拒绝（workflow 场景）
+        if session.session_type == "main":
+            try:
+                await session_mgr.recover_session(session_id)
+            except Exception:  # noqa: BLE001
+                return None, {"type": "error", "message": f"会话 {session_id} 恢复失败，请稍后再试", "session_id": session_id, "terminal": False}
+            session = session_mgr.get_session(session_id)
+            if session is None:
+                return None, {"type": "error", "message": f"未找到会话 {session_id}", "session_id": session_id, "terminal": False}
+        else:
+            return None, {"type": "error", "message": f"会话 {session_id} 状态为 error，无法{action_label}", "session_id": session_id, "terminal": False}
     if session.status == "streaming" or session.invocation_active:
         return None, {"type": "error", "message": f"会话 {session_id} 正在处理中，请稍后再试", "session_id": session_id, "terminal": False}
     return session, None
@@ -186,20 +196,30 @@ async def _execute_with_events(session, session_id: str, action_coro, action_lab
             })
     except Exception as e:
         logger.error(f"会话 {session_id} {action_label}失败: {e}", exc_info=True)
-        terminal_already_emitted = session.status == "error"
-        session.status = "error"
-        if not terminal_already_emitted:
+        if session.status == "error":
+            # 子会话已由 _invoke_graph 置为 error 终态（让 workflow 感知失败），
+            # 这里不重复处理，避免覆盖已发出的 error 事件。
+            return
+        # 修复：外层异常不再把会话置为 error 终态——主会话失败后保持可重发。
+        # 回滚该轮残留（_rollback_on_error 内部判断消息类型，安全幂等）。
+        try:
+            await session._rollback_on_error()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
             error_message = session._record_terminal_error(e)
-            await event_bus.emit_chat({
-                "type": "error",
-                "message": error_message,
-                "session_id": session_id,
-                "terminal": True,
-                "messages": [
-                    message for message in session.record
-                    if is_visible_to_frontend(message)
-                ],
-            })
+        except Exception:  # noqa: BLE001
+            error_message = str(e)
+        await event_bus.emit_chat({
+            "type": "error",
+            "message": error_message,
+            "session_id": session_id,
+            "terminal": False,
+            "messages": [
+                message for message in session.record
+                if is_visible_to_frontend(message)
+            ],
+        })
     finally:
         session.updated_at = datetime.now(timezone.utc).isoformat()
         await session.async_save()

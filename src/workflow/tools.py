@@ -53,6 +53,43 @@ def _internal_only_failure(workflow_id: str) -> str:
     )
 
 
+def _strip_node_outputs(task: dict) -> dict:
+    """去掉 task node_states 里的 outputs/stdout/stderr 全文，只留进度元数据。
+
+    修复：list_tasks 此前返回 task.to_dict() 的完整 node_states（含各节点
+    outputs/stdout/stderr 全文），工作流单次运行即可产生数十万字符的工具结果，
+    主会话反复调用 list_tasks 轮询会迅速撑爆上下文（曾实测 130 万 token > 104 万
+    上限，导致会话 400 超限报废）。get_task_status 已做轻量化，这里与之一致。
+    """
+    node_states = task.get("node_states") or {}
+    light: dict[str, dict] = {}
+    for nid, node in node_states.items():
+        if not isinstance(node, dict):
+            light[nid] = node  # type: ignore[assignment]
+            continue
+        light[nid] = {
+            key: node.get(key)
+            for key in (
+                "node_id",
+                "status",
+                "summary",
+                "error",
+                "attempt_count",
+                "automatic_retry_count",
+                "next_retry_at",
+                "available_actions",
+                "started_at",
+                "completed_at",
+                "rejection_count",
+                "rejection_reason",
+                "reject_upstream_count",
+            )
+        }
+    cleaned = dict(task)
+    cleaned["node_states"] = light
+    return cleaned
+
+
 def _policy_unavailable_failure(workflow_id: str) -> str:
     """Fail closed when a tool cannot establish a workflow's policy."""
     return _fail(
@@ -860,7 +897,7 @@ def create_list_tasks_tool(
                 )
                 if task_policy_error:
                     continue
-                visible_tasks.append(task)
+                visible_tasks.append(_strip_node_outputs(task))
             return _ok(
                 workflow_id=workflow_id,
                 tasks=visible_tasks,

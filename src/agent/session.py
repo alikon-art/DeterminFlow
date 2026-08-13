@@ -1812,13 +1812,31 @@ class AgentSession:
                 # 返回空字符串，不抛出异常，让 ws_handlers 正常推送 chain_end
                 return ""
             else:
-                # 其他 BadRequestError，按通用异常处理
+                # 其他 BadRequestError
                 self._logger.debug(
                     "[SESSION] _invoke_graph BadRequestError: session=%s, error=%s",
                     self.session_id, type(e).__name__,
                 )
                 self._logger.error(f"Graph invoke BadRequestError: {e}", exc_info=True)
                 error_message = self._record_terminal_error(e)
+                if self.session_type == "main":
+                    # 修复：主会话 400 不杀会话——回滚该轮（清理悬空 tool_calls）、
+                    # 保持 running，用户可原样重发（下轮输入重新构造，400 大概率消失）
+                    self.status = "running"
+                    await self._rollback_on_error(sanitize_pairs=True, sync_snapshot=False)
+                    if event_callback:
+                        try:
+                            await event_callback({
+                                "type": "error",
+                                "session_id": self.session_id,
+                                "message": error_message,
+                                "terminal": False,
+                                "messages": self._visible_record(),
+                            })
+                        except Exception:
+                            pass
+                    return ""
+                # 子会话：保持原行为（error 终态 + raise，让 workflow 节点感知失败）
                 self.status = "error"
                 await self._rollback_on_error(sanitize_pairs=True, sync_snapshot=False)
                 if event_callback:
@@ -1878,8 +1896,27 @@ class AgentSession:
             self._logger.error(f"Graph invoke 错误: {e}", exc_info=True)
 
             error_message = self._record_terminal_error(e)
-            self.status = "error"
 
+            if self.session_type == "main":
+                # 修复：主会话瞬态失败（网络/超时/限流/流中断）不杀会话——
+                # 回滚该轮用户消息、保持 running、提示重发，会话不报废。
+                self.status = "running"
+                await self._rollback_on_error(sanitize_pairs=True)
+                if event_callback:
+                    try:
+                        await event_callback({
+                            "type": "error",
+                            "session_id": self.session_id,
+                            "message": error_message,
+                            "terminal": False,
+                            "messages": self._visible_record(),
+                        })
+                    except Exception:
+                        pass  # event_callback 可能因 WS 断线失败，不影响主流程
+                return ""
+
+            # 子会话：保持原行为（error 终态 + raise，让 workflow 节点感知失败）
+            self.status = "error"
             await self._rollback_on_error(sanitize_pairs=True)
 
             # 事件已通过非阻塞队列投递，无需等待
