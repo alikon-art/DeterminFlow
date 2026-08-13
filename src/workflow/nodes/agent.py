@@ -12,6 +12,7 @@ import logging
 import time
 
 from src.config import WORKFLOW_NODE_TIMEOUT_SECONDS
+from src.core.utils import message_content_text
 from src.workflow.json_output import (
     build_json_retry_prompt,
     detect_output_format,
@@ -492,6 +493,12 @@ class AgentNode(BaseNodePlugin):
                     validated_output if validation_enabled
                     else self._get_last_ai_message(sm, session_id)
                 )
+            if not last_msg_for_file:
+                # 修复：模型偶发输出空 content（如 DeepSeek 推理模式只产出
+                # reasoning 而无正文）——此前直接判失败，会触发任务级恢复、
+                # 重跑整条管线（已完成节点被重复执行，实测要 3 次才成功）。
+                # 改为复用同一子会话重试，命中率高且只重跑当前节点。
+                last_msg_for_file = await self._retry_empty_output(sm, session_id)
             if last_msg_for_file:
                 try:
                     # 解析路径中的 {{key}} 占位符
@@ -682,27 +689,70 @@ class AgentNode(BaseNodePlugin):
             note += f"；安全修复: {repairs}"
         return f"{summary}\n\n{note}" if summary else note
 
-    @staticmethod
-    def _get_last_ai_message(sm, session_id: str) -> str:
-        """从子会话 record 中提取最后一条 assistant 消息的文本。"""
+    # 空输出重试：模型偶发只输出 reasoning 而无正文（如 DeepSeek 推理模式）。
+    # 复用同一子会话重试，避免失败后整个任务重跑。
+    EMPTY_OUTPUT_RETRY_COUNT = 2
+    EMPTY_OUTPUT_RETRY_PROMPT = (
+        "你的上一条回复内容为空。请基于之前的指令重新完整输出结果，"
+        "不要重复提问，不要输出任何解释，直接给出最终内容。"
+    )
+
+    async def _retry_empty_output(self, sm, session_id: str) -> str:
+        """复用子会话重试空输出；全部失败返回空字符串。"""
         session = sm.sessions.get(session_id) if hasattr(sm, "sessions") else None
-        if not session:
+        if session is None or not hasattr(session, "send_message"):
             return ""
-        for msg in reversed(session.record):
-            if msg.get("type") == "assistant" and msg.get("content"):
-                return msg["content"]
+        for attempt in range(1, self.EMPTY_OUTPUT_RETRY_COUNT + 1):
+            try:
+                await session.send_message(
+                    self.EMPTY_OUTPUT_RETRY_PROMPT,
+                    max_rounds=1,
+                    source="workflow_empty_output_retry",
+                    source_name="workflow_node",
+                )
+            except Exception:
+                logger.exception("空输出重试调用失败: session=%s", session_id)
+                break
+            text = self._get_last_ai_message(sm, session_id)
+            if text:
+                logger.info(
+                    "节点空输出重试第 %d 次成功: session=%s", attempt, session_id,
+                )
+                return text
+        logger.error("节点空输出重试 %d 次仍无输出: session=%s",
+                     self.EMPTY_OUTPUT_RETRY_COUNT, session_id)
         return ""
 
     @staticmethod
-    def _get_latest_ai_message(sm, session_id: str) -> str:
-        """读取最新 assistant 消息；不得用更早的非空消息替代空输出。"""
+    def _get_last_ai_message(sm, session_id: str) -> str:
+        """从子会话 record 中提取最后一条非空 assistant 消息的文本。
+
+        兼容结构化 content（list 块）——统一经 message_content_text 转换，
+        避免模型输出块格式时误判为空。
+        """
         session = sm.sessions.get(session_id) if hasattr(sm, "sessions") else None
         if not session:
             return ""
         for msg in reversed(session.record):
             if msg.get("type") == "assistant":
-                content = msg.get("content")
-                return content if isinstance(content, str) else ""
+                text = message_content_text(msg.get("content"))
+                if text:
+                    return text
+        return ""
+
+    @staticmethod
+    def _get_latest_ai_message(sm, session_id: str) -> str:
+        """读取最新 assistant 消息；不得用更早的非空消息替代空输出。
+
+        兼容结构化 content（list 块）——统一经 message_content_text 转换，
+        否则 OpenAI 兼容接口返回 list 格式时会被误判为空输出。
+        """
+        session = sm.sessions.get(session_id) if hasattr(sm, "sessions") else None
+        if not session:
+            return ""
+        for msg in reversed(session.record):
+            if msg.get("type") == "assistant":
+                return message_content_text(msg.get("content"))
         return ""
 
     @staticmethod
