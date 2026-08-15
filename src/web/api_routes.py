@@ -61,6 +61,7 @@ class SendMessageRequest(BaseModel):
 class CreateMainSessionRequest(BaseModel):
 
     agent_type: str = "main"
+    from_session_id: str | None = None
 
 
 class UpdateSessionModelRequest(BaseModel):
@@ -473,10 +474,14 @@ async def delete_session(session_id: str, request: Request):
 
 @router.post("/sessions/main/new")
 async def create_new_main_session(body: CreateMainSessionRequest, request: Request):
-    """创建新的主会话（前端主动触发），支持指定 agent_type"""
+    """创建新的主会话（前端主动触发），支持指定 agent_type 与 workspace 继承。"""
     sm = _get_session_manager(request)
     llm = getattr(request.app.state, "llm", None)
-    result = await sm.create_main_session(llm_client=llm, agent_type=body.agent_type)
+    result = await sm.create_main_session(
+        llm_client=llm,
+        agent_type=body.agent_type,
+        from_session_id=body.from_session_id,
+    )
     return result
 
 
@@ -1372,6 +1377,26 @@ async def create_skill(body: CreateSkillRequest, request: Request):
 
     skill = sm.create_skill(body.model_dump())
     return {"success": True, "skill": skill.to_dict()}
+
+
+@router.post("/skills/import")
+async def import_skills(request: Request, filename: str = ""):
+    """从外部打包导入 skill（Agent Skills 开放标准）。
+
+    body 为文件原始字节；filename 扩展名决定解压方式：
+    .zip / .tar.gz / .tgz 解压扫描，其他按单个 SKILL.md 文本处理。
+    返回 imported / skipped / conflicts / errors 四类结果。
+    """
+    sm = _get_skill_manager(request)
+    if not sm:
+        raise HTTPException(status_code=500, detail="Skill 管理器未初始化")
+
+    raw = await request.body()
+    if not raw:
+        raise HTTPException(status_code=400, detail="请求体为空")
+
+    result = sm.import_skill_archive(raw, filename=filename)
+    return {"success": True, **result}
 
 
 class UpdateSkillRequest(BaseModel):

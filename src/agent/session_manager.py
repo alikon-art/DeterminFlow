@@ -239,14 +239,20 @@ class SessionManager(SessionLifecycleMixin):
             workflow_id=workflow_id,
         ))
 
-    async def create_main_session(self, llm_client=None, agent_type: str = "main") -> dict:
+    async def create_main_session(
+        self,
+        llm_client=None,
+        agent_type: str = "main",
+        from_session_id: str | None = None,
+    ) -> dict:
         """创建新的主会话（用于前端主动创建新会话）。
 
         支持指定任意 agent_type（如 "coder"、"researcher" 等），
         非 main 类型使用 subagent 路径构建提示词和工具集。
 
-        多 main 并存：旧主会话不会被停止，新老 main 同时运行。
-        通过 PromptBuilder + ToolAssembler 统一流程。
+        from_session_id: 可选，从既有会话继承 workspace（新会话复用其
+            workspace 目录，而不是新建空目录）。继承判断必须在创建新
+            workspace 之前完成，且 register_main 不会覆盖继承的路径。
         """
         from src.agent.definition import get_agent_definition
 
@@ -273,10 +279,30 @@ class SessionManager(SessionLifecycleMixin):
         # 避免把 Provider 尚未确认时的临时回退固化给后续 Sub Session。
         new_session.model_id = model
 
-        # 2. 分配 workspace（必须在 prompt 构建前，因为 session_meta 需要 workspace_path）
+        # 2. 分配 workspace（必须在 prompt 构建前，因为 session_meta 需要 workspace_path）。
+        #    支持 from_session_id 继承：复用源会话的 workspace，而不是新建空目录。
+        #    继承判断必须发生在 create_workspace 之前（评审：此前新 Session 先创建了
+        #    自己的 workspace，导致 `if not new_session.workspace_path` 永远为 false）。
+        inherited_workspace = ""
+        if from_session_id:
+            src_session = self.get_session(from_session_id)
+            if src_session is None:
+                return {
+                    "success": False,
+                    "message": f"未找到待继承会话 {from_session_id}",
+                    "error": "from_session_not_found",
+                }
+            inherited_workspace = src_session.workspace_path or ""
         if self._workspace_manager:
-            ws_path = self._workspace_manager.create_workspace(new_session.session_id)
-            new_session.workspace_path = str(ws_path)
+            if inherited_workspace:
+                new_session.workspace_path = inherited_workspace
+                logger.info(
+                    "新主会话 %s 继承 workspace: %s (from %s)",
+                    new_session.session_id, inherited_workspace, from_session_id,
+                )
+            else:
+                ws_path = self._workspace_manager.create_workspace(new_session.session_id)
+                new_session.workspace_path = str(ws_path)
 
         # 加载 agent 定义并解析 prompt_template
         agent_def = get_agent_definition(agent_type)
@@ -828,6 +854,54 @@ class SessionManager(SessionLifecycleMixin):
     # 统一消息发送入口
     # ============================================================
 
+    async def ensure_graph_ready(self, session) -> bool:
+        """确保会话具备可运行的 Graph；冷加载会话重建完整运行依赖。
+
+        从磁盘冷加载（AgentSession.load）的会话 compiled_graph 为 None 且无
+        tools——直接使用会报"Graph 未初始化"。这里按 agent_type 重建
+        llm/tools/graph/consumer，并将冷加载的 error 状态重置为可运行，
+        使 legacy/cold error Session 的自动恢复入口可达。
+
+        Returns:
+            bool: 会话现在可运行（graph 已就绪）
+        """
+        if getattr(session, "compiled_graph", None) is not None:
+            return True
+        try:
+            from src.core.llm_client import create_startup_llm
+
+            llm = create_startup_llm(
+                model_override=session.model_id or None,
+                streaming=True,
+                model_params=session.model_params,
+            )
+            tools: list = []
+            assembler = getattr(self, "_tool_assembler", None)
+            if assembler is not None and hasattr(assembler, "build"):
+                from src.agent.definition import get_agent_definition
+
+                agent_def = get_agent_definition(session.agent_type)
+                tools = assembler.build(
+                    session.agent_type,
+                    agent_definition=agent_def,
+                    workspace_path=session.workspace_path or "",
+                )
+            session.setup_graph(llm=llm, tools=tools)
+            session.start_consumer()
+            if session.status == "error":
+                session.status = "completed"
+            logger.info(
+                "冷加载会话已重建运行依赖: session=%s agent=%s",
+                session.session_id, session.agent_type,
+            )
+            return True
+        except Exception:
+            logger.exception(
+                "重建会话运行依赖失败: session=%s agent=%s",
+                getattr(session, "session_id", "?"), getattr(session, "agent_type", "?"),
+            )
+            return False
+
     async def send_message_to_session(
         self,
         session_id: str,
@@ -850,15 +924,18 @@ class SessionManager(SessionLifecycleMixin):
         Returns:
             {"success": bool, "message": str, "reply": str}
         """
-        session = self.sessions.get(session_id)
+        session = self.get_session(session_id)
         if not session:
             return {"success": False, "message": f"未找到会话 {session_id}"}
 
-        if session.compiled_graph is None:
-            return {"success": False, "message": f"会话 {session_id} 的 Graph 未初始化"}
+        # 冷加载/legacy error 会话：先重建运行依赖（编译图检查前先恢复，
+        # 否则 error Session 的自动恢复入口不可达）
+        if session.compiled_graph is None and not await self.ensure_graph_ready(session):
+            return {"success": False, "message": f"会话 {session_id} 无法初始化运行依赖"}
 
         if session.status == "error":
-            return {"success": False, "message": f"会话 {session_id} 状态为 error，无法发送消息"}
+            # 用户显式重试：重置为可运行状态（error 会话恢复入口）
+            session.status = "completed"
 
         # 如果当前正在 streaming，等待一下（或拒绝）
         if session.status == "streaming":
@@ -870,8 +947,6 @@ class SessionManager(SessionLifecycleMixin):
             # - sub session → events 通道（sub_ 前缀，与 chat 通道隔离）
             if event_callback is not None:
                 cb = event_callback
-            elif session.session_type == "main":
-                cb = self._make_event_callback(session_id)
             else:
                 cb = self._make_event_callback(session_id)
             reply = await session.send_message(content=message, event_callback=cb, max_rounds=max_rounds)
@@ -899,15 +974,17 @@ class SessionManager(SessionLifecycleMixin):
         Returns:
             {"success": bool, "message": str, "reply": str}
         """
-        session = self.sessions.get(session_id)
+        session = self.get_session(session_id)
         if not session:
             return {"success": False, "message": f"未找到会话 {session_id}"}
 
-        if session.compiled_graph is None:
-            return {"success": False, "message": f"会话 {session_id} 的 Graph 未初始化"}
+        # 冷加载/legacy error 会话：先重建运行依赖（评审：编译图检查前先恢复）
+        if session.compiled_graph is None and not await self.ensure_graph_ready(session):
+            return {"success": False, "message": f"会话 {session_id} 无法初始化运行依赖"}
 
         if session.status == "error":
-            return {"success": False, "message": f"会话 {session_id} 状态为 error，无法编辑消息"}
+            # 用户显式重试：重置为可运行状态（error 会话恢复入口）
+            session.status = "completed"
 
         if session.status == "streaming":
             return {"success": False, "message": f"会话 {session_id} 正在流式输出中，无法编辑消息"}
@@ -915,8 +992,6 @@ class SessionManager(SessionLifecycleMixin):
         try:
             if event_callback is not None:
                 cb = event_callback
-            elif session.session_type == "main":
-                cb = self._make_event_callback(session_id)
             else:
                 cb = self._make_event_callback(session_id)
             reply = await session.edit_message_and_resend(
@@ -958,16 +1033,17 @@ class SessionManager(SessionLifecycleMixin):
         Returns:
             {"success": bool, "message": str}
         """
-        from_session = self.sessions.get(from_session_id)
+        from_session = self.get_session(from_session_id)
         if not from_session:
             return {"success": False, "message": f"未找到发送方会话 {from_session_id}"}
 
-        to_session = self.sessions.get(to_session_id)
+        to_session = self.get_session(to_session_id)
         if not to_session:
             return {"success": False, "message": f"未找到目标会话 {to_session_id}"}
 
-        if to_session.compiled_graph is None:
-            return {"success": False, "message": f"目标会话 {to_session_id} 的 Graph 未初始化"}
+        # 冷加载目标会话：先重建运行依赖（评审：agent 间通信的冷恢复入口）
+        if to_session.compiled_graph is None and not await self.ensure_graph_ready(to_session):
+            return {"success": False, "message": f"目标会话 {to_session_id} 无法初始化运行依赖"}
 
         # Scope 隔离：校验两个 session 是否在同一棵树内
         from_root = self._get_root_main(from_session_id)

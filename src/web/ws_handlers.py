@@ -119,17 +119,26 @@ def _resolve_session_snapshot(session_mgr, session_id: str | None, *, bus=event_
     return _build_session_snapshot(main_session, bus=bus)
 
 async def _validate_session(session_mgr, session_id: str, action_label: str):
-    """通用会话前置校验：存在性、graph 初始化、状态检查。
+    """通用会话前置校验：存在性、graph 就绪、状态检查。
+
+    冷加载/legacy error 会话会先重建运行依赖（ensure_graph_ready），
+    使 error 会话的自动恢复入口可达；error 状态下用户主动操作视为重试，
+    重置为可运行状态。
 
     返回 (session, None) 校验通过；返回 (None, error_dict) 校验失败。
     """
     session = session_mgr.get_session(session_id)
     if not session:
         return None, {"type": "error", "message": f"未找到会话 {session_id}", "session_id": session_id, "terminal": False}
+    # 冷加载重建运行依赖（评审：编译图检查前先恢复）
     if session.compiled_graph is None:
-        return None, {"type": "error", "message": f"会话 {session_id} Graph 未初始化", "session_id": session_id, "terminal": False}
+        ensure = getattr(session_mgr, "ensure_graph_ready", None)
+        ready = await ensure(session) if callable(ensure) else False
+        if not ready:
+            return None, {"type": "error", "message": f"会话 {session_id} 无法初始化运行依赖", "session_id": session_id, "terminal": False}
     if session.status == "error":
-        return None, {"type": "error", "message": f"会话 {session_id} 状态为 error，无法{action_label}", "session_id": session_id, "terminal": False}
+        # error 会话允许用户显式重试（自动恢复入口）
+        session.status = "completed"
     if session.status == "streaming" or session.invocation_active:
         return None, {"type": "error", "message": f"会话 {session_id} 正在处理中，请稍后再试", "session_id": session_id, "terminal": False}
     return session, None
@@ -163,7 +172,9 @@ async def _execute_with_events(session, session_id: str, action_coro, action_lab
 
     try:
         await action_coro
-        if session.status == "error":
+        # 错误或降级结束（递归上限/内容过滤/可恢复 Provider 错误）时，
+        # 不得再推送 chain_end——保证单一、可判定的结束事件。
+        if session.status == "error" or getattr(session, "_degraded", False):
             return
         serialized = [m for m in session.record if is_visible_to_frontend(m)]
         chain_end_event: dict = {

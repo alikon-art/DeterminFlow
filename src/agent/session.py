@@ -633,6 +633,11 @@ class AgentSession:
 
         self._abort_requested: bool = False
 
+        # 降级结束标记：本轮以"降级"（递归上限/内容过滤/可恢复 Provider 错误）
+        # 而非正常完成结束，外层不得再推送 chain_end（避免同一轮既 error 又
+        # 成功结束的协议歧义）。每轮 invoke 开始前重置。
+        self._degraded: bool = False
+
         # 调用生命周期独立于 status；准备消息和压缩发生在 stream_start 之前，
         # 终止/删除也必须能识别并停止这一阶段。
         self._invocation_active: bool = False
@@ -1253,6 +1258,37 @@ class AgentSession:
         self._current_event_callback = None
         return self.get_last_assistant_message()
 
+    @staticmethod
+    def _is_recoverable_error(exc: BaseException) -> bool:
+        """判断异常是否为明确可恢复的 Provider/网络错误。
+
+        仅对可恢复的瞬态故障（连接/超时/限流/5xx/流中断）降级为可重试；
+        无效参数（BadRequestError）、配置错误与代码缺陷属于不可恢复错误，
+        必须终态失败，不得伪装成瞬态故障。
+
+        Returns:
+            bool: 可恢复返回 True
+        """
+        from openai import (
+            APIConnectionError,
+            APITimeoutError,
+            APIStatusError,
+            RateLimitError,
+        )
+
+        if isinstance(exc, (APIConnectionError, APITimeoutError, RateLimitError)):
+            return True
+        if isinstance(exc, APIStatusError) and exc.status_code >= 500:
+            return True
+        # 流式中断/重连类错误（openai 无专用异常，按消息特征识别）
+        message = str(exc or "").lower()
+        if any(token in message for token in (
+            "connection reset", "connection refused", "eof", "broken pipe",
+            "temporarily unavailable", "timed out", "timeout", "5xx",
+        )):
+            return True
+        return False
+
     async def _invoke_graph(
 
         self,
@@ -1272,6 +1308,9 @@ class AgentSession:
     ) -> str:
 
         """内部：执行一轮 graph invoke。"""
+
+        # 每轮开始重置降级结束标记（上一轮降级不得影响本轮结束事件判定）
+        self._degraded = False
 
         # ---- 非阻塞事件推送：fire-and-forget ----
         # 高并发时 event_callback 会经过 event_bus.emit 串行发送到所有 WS 客户端，
@@ -1761,6 +1800,8 @@ class AgentSession:
 
             # 保持会话状态为 running，允许用户继续操作
             self.status = "running"
+            # 降级结束标记：外层不得再推送 chain_end（避免"既 error 又成功"歧义）
+            self._degraded = True
             await self._rollback_on_error()
 
             # 事件已通过非阻塞队列投递，无需等待
@@ -1855,6 +1896,8 @@ class AgentSession:
 
             # 保持会话状态为 running，允许用户继续操作
             self.status = "running"
+            # 降级结束标记：外层不得再推送 chain_end
+            self._degraded = True
             await self._rollback_on_error(rollback_record=False)
 
             if event_callback:
@@ -1875,6 +1918,31 @@ class AgentSession:
                 "[SESSION] _invoke_graph 异常: session=%s, error=%s",
                 self.session_id, type(e).__name__,
             )
+
+            if self._is_recoverable_error(e):
+                # 明确可恢复的 Provider/网络错误：降级为可重试（不伪装成功，
+                # 不发 chain_end），会话保持可运行，用户可继续/重试。
+                self._logger.warning(
+                    "会话 %s 遭遇可恢复错误（%s: %s），降级为可重试",
+                    self.session_id, type(e).__name__, e,
+                )
+                error_message = self._record_terminal_error(e)
+                self.status = "running"
+                self._degraded = True
+                await self._rollback_on_error(sanitize_pairs=True)
+                if event_callback:
+                    try:
+                        await event_callback({
+                            "type": "error",
+                            "session_id": self.session_id,
+                            "message": f"{error_message}（可恢复，请重试）",
+                            "terminal": False,
+                            "recoverable": True,
+                        })
+                    except Exception:
+                        pass
+                return ""
+
             self._logger.error(f"Graph invoke 错误: {e}", exc_info=True)
 
             error_message = self._record_terminal_error(e)

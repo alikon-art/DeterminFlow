@@ -58,7 +58,8 @@ class SessionLifecycleMixin:
         session.runtime_scope = "interactive"
         self.register_runtime_session(session)
         self.main_session_id = session.session_id
-        if self._workspace_manager:
+        # 仅在尚无 workspace 时分配（from_session_id 继承的路径不得被覆盖）
+        if self._workspace_manager and not session.workspace_path:
             ws_path = self._workspace_manager.create_workspace(session.session_id)
             session.workspace_path = str(ws_path)
         logger.info(
