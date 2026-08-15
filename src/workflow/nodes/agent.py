@@ -192,6 +192,14 @@ class AgentNode(BaseNodePlugin):
                 "description": "JSON 校验失败后追加修复指令的最大次数",
             },
             {
+                "key": "retry_empty_output",
+                "label": "空输出自动重试",
+                "type": "boolean",
+                "required": False,
+                "default": True,
+                "description": "开启后，本轮 LLM 输出为空时复用同一子会话自动重试（只重跑当前节点，避免整条管线重跑）；重试不会触发工具调用。关闭则空输出直接判失败",
+            },
+            {
                 "key": "model_override",
                 "label": "模型覆盖",
                 "type": "select",
@@ -449,7 +457,7 @@ class AgentNode(BaseNodePlugin):
                 token_usage=node_token_usage,
             )
 
-        # 从 session 读取累计 token 消耗
+        # 从 session 读取累计 token 消耗（重试成功后需重新读取，见下方）
         node_token_usage = self._get_session_token_usage(sm, session_id)
 
         validation_enabled = bool(
@@ -457,48 +465,84 @@ class AgentNode(BaseNodePlugin):
             or json_output_field
             or json_output_field_min_chars
         )
-        validated_output = ""
-        if completion_result["status"] == "success" and validation_enabled:
-            validated_output = self._get_latest_ai_message(sm, session_id)
-            validation = validate_agent_output(
-                validated_output,
-                require_non_empty=require_non_empty_output,
-                json_field=json_output_field,
-                json_field_min_chars=json_output_field_min_chars,
-            )
-            if not validation.success:
-                return NodeResult(
-                    summary=completion_result["summary"],
-                    status="failed",
-                    error=f"LLM 输出校验失败: {validation.error}",
-                    session_id=session_id,
-                    outputs={},
-                    token_usage=node_token_usage,
-                )
+        # retry_empty_output：优先节点属性（definition 层），回退 node_params（前端表单）
+        _retry_flag = getattr(node_def, "retry_empty_output", None)
+        if _retry_flag is None:
+            _retry_flag = (node_def.node_params or {}).get("retry_empty_output", True)
+        retry_enabled = bool(_retry_flag)
 
-        # 构建 NodeResult，提取输出变量
         outputs: dict[str, str] = {}
-        if output_var_key and completion_result["status"] == "success":
-            last_msg = (
-                validated_output if validation_enabled
-                else self._get_last_ai_message(sm, session_id)
-            )
-            if last_msg:
-                outputs[output_var_key] = last_msg
+        last_output = ""
+
+        if completion_result["status"] == "success":
+            # 本轮最新 assistant 输出。语义：最新消息即本轮输出——最新为空时视为
+            # 空输出（触发重试），不得回退到更早的非空中间回复。
+            last_output = self._get_latest_ai_message(sm, session_id)
+
+            # ---- 空输出统一重试 ----
+            # 覆盖 require_non_empty_output / JSON 字段校验 / 仅 output_variable /
+            # save_output_to_file 全部路径：只要本轮输出为空且允许重试，就复用
+            # 同一子会话重试，避免失败后整条管线重跑。
+            if not last_output and retry_enabled:
+                last_output = await self._retry_empty_output(sm, session_id)
+                if last_output:
+                    # 重试消耗了 1~N 次模型调用，重新读取累计 token 用量，
+                    # 否则 NodeResult 计量与成本审计会少算。
+                    node_token_usage = self._get_session_token_usage(sm, session_id)
+                elif output_var_key or validation_enabled or (
+                    save_output_to_file and output_file_path_raw
+                ):
+                    # 节点要求输出但重试仍为空：判失败，不得以"成功"结束。
+                    return NodeResult(
+                        summary=completion_result["summary"],
+                        status="failed",
+                        error=(
+                            "LLM 输出为空，自动重试 "
+                            f"{self.EMPTY_OUTPUT_RETRY_COUNT} 次后仍无输出"
+                        ),
+                        session_id=session_id,
+                        outputs={},
+                        token_usage=self._get_session_token_usage(sm, session_id),
+                    )
+
+            # ---- 校验（require_non_empty / JSON 字段路径）----
+            if validation_enabled:
+                validation = validate_agent_output(
+                    last_output,
+                    require_non_empty=require_non_empty_output,
+                    json_field=json_output_field,
+                    json_field_min_chars=json_output_field_min_chars,
+                )
+                if not validation.success:
+                    return NodeResult(
+                        summary=completion_result["summary"],
+                        status="failed",
+                        error=f"LLM 输出校验失败: {validation.error}",
+                        session_id=session_id,
+                        outputs={},
+                        token_usage=node_token_usage,
+                    )
+
+            # ---- 输出变量提取（含重试结果写回）----
+            if output_var_key:
+                if last_output:
+                    outputs[output_var_key] = last_output
 
         # ---- 保存最后输出到文件 ----
         if save_output_to_file and output_file_path_raw and completion_result["status"] == "success":
-            last_msg_for_file = outputs.get(output_var_key) if output_var_key else \
-                (
-                    validated_output if validation_enabled
-                    else self._get_last_ai_message(sm, session_id)
-                )
+            last_msg_for_file = outputs.get(output_var_key) if output_var_key else last_output
             if not last_msg_for_file:
                 # 修复：模型偶发输出空 content（如 DeepSeek 推理模式只产出
                 # reasoning 而无正文）——此前直接判失败，会触发任务级恢复、
                 # 重跑整条管线（已完成节点被重复执行，实测要 3 次才成功）。
                 # 改为复用同一子会话重试，命中率高且只重跑当前节点。
                 last_msg_for_file = await self._retry_empty_output(sm, session_id)
+                if last_msg_for_file:
+                    # 重试消耗了模型调用，重新读取累计 token 用量
+                    node_token_usage = self._get_session_token_usage(sm, session_id)
+                    # 非 JSON 路径也把重试结果写回输出变量，下游节点才能引用
+                    if output_var_key:
+                        outputs[output_var_key] = last_msg_for_file
             if last_msg_for_file:
                 try:
                     # 解析路径中的 {{key}} 占位符
@@ -659,7 +703,7 @@ class AgentNode(BaseNodePlugin):
                     "meta": meta,
                 }
 
-            retry_output = self._get_last_ai_message(sm, session_id)
+            retry_output = self._get_latest_ai_message(sm, session_id)
             retry_result = validate_and_format_json(
                 retry_output,
                 repair=policy == "safe_repair_then_retry",
@@ -691,14 +735,21 @@ class AgentNode(BaseNodePlugin):
 
     # 空输出重试：模型偶发只输出 reasoning 而无正文（如 DeepSeek 推理模式）。
     # 复用同一子会话重试，避免失败后整个任务重跑。
+    # 注意：重试 prompt 显式禁止工具调用，避免复用带工具的子会话时再次触发
+    # 有副作用的工具（评审要求明确副作用边界）。
     EMPTY_OUTPUT_RETRY_COUNT = 2
     EMPTY_OUTPUT_RETRY_PROMPT = (
         "你的上一条回复内容为空。请基于之前的指令重新完整输出结果，"
-        "不要重复提问，不要输出任何解释，直接给出最终内容。"
+        "不要重复提问，不要调用任何工具，不要输出任何解释，直接给出最终内容。"
     )
 
     async def _retry_empty_output(self, sm, session_id: str) -> str:
-        """复用子会话重试空输出；全部失败返回空字符串。"""
+        """复用子会话重试空输出；全部失败返回空字符串。
+
+        判断重试结果必须读取【最新】 assistant 消息（_get_latest_ai_message）：
+        若重试后仍为空，说明重试失败，不得回退到更早的非空中间回复（否则会
+        把旧回复当成本轮最终输出，反而绕过重试）。
+        """
         session = sm.sessions.get(session_id) if hasattr(sm, "sessions") else None
         if session is None or not hasattr(session, "send_message"):
             return ""
@@ -713,7 +764,7 @@ class AgentNode(BaseNodePlugin):
             except Exception:
                 logger.exception("空输出重试调用失败: session=%s", session_id)
                 break
-            text = self._get_last_ai_message(sm, session_id)
+            text = self._get_latest_ai_message(sm, session_id)
             if text:
                 logger.info(
                     "节点空输出重试第 %d 次成功: session=%s", attempt, session_id,
@@ -724,28 +775,15 @@ class AgentNode(BaseNodePlugin):
         return ""
 
     @staticmethod
-    def _get_last_ai_message(sm, session_id: str) -> str:
-        """从子会话 record 中提取最后一条非空 assistant 消息的文本。
-
-        兼容结构化 content（list 块）——统一经 message_content_text 转换，
-        避免模型输出块格式时误判为空。
-        """
-        session = sm.sessions.get(session_id) if hasattr(sm, "sessions") else None
-        if not session:
-            return ""
-        for msg in reversed(session.record):
-            if msg.get("type") == "assistant":
-                text = message_content_text(msg.get("content"))
-                if text:
-                    return text
-        return ""
-
-    @staticmethod
     def _get_latest_ai_message(sm, session_id: str) -> str:
         """读取最新 assistant 消息；不得用更早的非空消息替代空输出。
 
         兼容结构化 content（list 块）——统一经 message_content_text 转换，
         否则 OpenAI 兼容接口返回 list 格式时会被误判为空输出。
+
+        语义约定：最新 assistant 消息即"本轮输出"——最新为空时必须视为空
+        输出（触发空输出重试），而不能回退到更早的非空中间回复，否则会绕过
+        重试并把旧内容当成本轮最终结果。
         """
         session = sm.sessions.get(session_id) if hasattr(sm, "sessions") else None
         if not session:

@@ -40,7 +40,7 @@ def make_plugin():
     return AgentNode()
 
 
-def test_get_last_ai_message_skips_empty_and_handles_list():
+def test_get_latest_ai_message_skips_empty_and_handles_list():
     sm = FakeSM({
         "s1": FakeSession([
             {"id": "m1", "type": "user", "content": "指令"},
@@ -49,18 +49,20 @@ def test_get_last_ai_message_skips_empty_and_handles_list():
              "content": [{"type": "text", "text": "结构化正文"}]},
         ]),
     })
-    # 最后一条非空 assistant（list 结构）应被提取为文本
-    assert AgentNode._get_last_ai_message(sm, "s1") == "结构化正文"
+    # 最新 assistant（list 结构）应被提取为文本
+    assert AgentNode._get_latest_ai_message(sm, "s1") == "结构化正文"
 
 
-def test_get_last_ai_message_all_empty_returns_empty():
+def test_get_latest_ai_message_skips_user_and_returns_empty():
     sm = FakeSM({
         "s1": FakeSession([
-            {"id": "m1", "type": "assistant", "content": ""},
-            {"id": "m2", "type": "assistant", "content": []},
+            {"id": "m1", "type": "user", "content": "指令"},
+            {"id": "m2", "type": "assistant", "content": ""},
+            {"id": "m3", "type": "user", "content": "追问"},
         ]),
     })
-    assert AgentNode._get_last_ai_message(sm, "s1") == ""
+    # 最新 assistant 为空：不得回退到更早的非空 assistant
+    assert AgentNode._get_latest_ai_message(sm, "s1") == ""
 
 
 def test_get_latest_ai_message_handles_list_content():
@@ -119,3 +121,46 @@ def test_retry_empty_output_fails_after_all_attempts():
 def test_retry_empty_output_missing_session_returns_empty():
     plugin = make_plugin()
     assert asyncio.run(plugin._retry_empty_output(FakeSM({}), "ghost")) == ""
+
+
+def test_retry_empty_output_does_not_fall_back_to_older_nonempty():
+    """评审边界：最新为空但更早非空时，重试不得把旧中间回复当成本轮输出。"""
+    plugin = make_plugin()
+
+    class FirstRetryStillEmptySession(FakeSession):
+        async def send_message(self, message, max_rounds=1, **kwargs):
+            self.sent_messages.append(message)
+            # 重试后仍追加空 assistant（模拟持续空输出）
+            self.record.append(
+                {"id": f"msg_{len(self.record) + 1:05d}", "type": "assistant",
+                 "content": ""}
+            )
+            return {"success": True}
+
+    # record: 较早的非空 assistant + 最新空 assistant
+    session = FirstRetryStillEmptySession([
+        {"id": "m1", "type": "assistant", "content": "较早的中间回复"},
+        {"id": "m2", "type": "assistant", "content": ""},
+    ])
+    sm = FakeSM({"s1": session})
+    text = asyncio.run(plugin._retry_empty_output(sm, "s1"))
+    # 重试全部失败 → 必须返回空，不能返回"较早的中间回复"
+    assert text == ""
+    assert len(session.sent_messages) == plugin.EMPTY_OUTPUT_RETRY_COUNT
+
+
+def test_retry_prompt_forbids_tool_calls():
+    """评审边界：重试复用带工具的子会话，prompt 必须显式禁止工具调用。"""
+    plugin = make_plugin()
+    assert "不要调用任何工具" in plugin.EMPTY_OUTPUT_RETRY_PROMPT
+
+
+def test_get_latest_ai_message_returns_empty_when_latest_is_empty():
+    """评审边界：最新 assistant 为空（更早非空）时返回空，触发重试而非绕过。"""
+    sm = FakeSM({
+        "s1": FakeSession([
+            {"id": "m1", "type": "assistant", "content": "早先输出"},
+            {"id": "m2", "type": "assistant", "content": ""},
+        ]),
+    })
+    assert AgentNode._get_latest_ai_message(sm, "s1") == ""

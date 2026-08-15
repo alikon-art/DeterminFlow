@@ -260,7 +260,7 @@ def test_agent_file_output_requires_a_final_ai_message(tmp_path):
     )
 
     assert result.status == "failed"
-    assert "没有最终 AI 输出" in result.error
+    assert ("LLM 输出为空" in result.error or "没有最终 AI 输出" in result.error)
     assert result.outputs == {}
     assert not (tmp_path / "result.json").exists()
 
@@ -312,7 +312,7 @@ def test_agent_output_gate_does_not_fall_back_to_older_non_empty_message(tmp_pat
     )
 
     assert result.status == "failed"
-    assert "LLM 最终输出为空" in result.error
+    assert "LLM 输出为空" in result.error
     assert result.outputs == {}
     assert not (tmp_path / "result.json").exists()
 
