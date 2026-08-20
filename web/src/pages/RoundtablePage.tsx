@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Users, Play, Square, Plus, X, Zap, Brain, FileText, Pause, SkipForward, Send, UserPlus, CircleCheck, AlertTriangle, Search, Rocket, BarChart3, Loader2, RefreshCw } from "lucide-react";
+import { Users, Play, Square, Plus, X, Zap, Brain, FileText, Pause, SkipForward, Send, UserPlus, CircleCheck, AlertTriangle, Search, Rocket, BarChart3, Loader2, RefreshCw, ArrowLeft } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useRoundtable } from "../hooks/useRoundtable";
 import TranscriptMessage from "../components/TranscriptMessage";
@@ -213,6 +213,15 @@ export default function RoundtablePage() {
         {/* 顶部状态栏 */}
         {activeSession && (
           <div className="px-6 py-3 border-b border-slate-700/50 bg-slate-800/80 flex items-center gap-4" role="banner" aria-label="会议状态栏">
+            <button
+              type="button"
+              onClick={clearActive}
+              aria-label="返回历史列表"
+              title="返回历史列表"
+              className="min-h-[44px] min-w-[44px] -ml-2 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-700/50 transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-indigo-500/30"
+            >
+              <ArrowLeft size={18} aria-hidden="true" />
+            </button>
             <Users size={18} className="text-cyan-500" aria-hidden="true" />
             <span className="text-sm font-medium text-slate-200 truncate flex-1">
               {activeSession.topic}
