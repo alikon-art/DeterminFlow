@@ -2,11 +2,14 @@
 
 Production uses the Gunicorn command declared by the Docker image.
 """
+import os
 import sys
 from pathlib import Path
 
 # 将项目根目录加入 sys.path
 sys.path.insert(0, str(Path(__file__).parent))
+
+npm_cmd = "npm.cmd" if os.name == "nt" else "npm"
 
 
 def _build_frontend_if_needed():
@@ -42,10 +45,10 @@ def _build_frontend_if_needed():
     # 检查 node_modules 是否存在
     if not (web_dir / "node_modules").exists():
         print("  📦 安装前端依赖...")
-        subprocess.run(["npm", "install"], cwd=str(web_dir), check=True)
+        subprocess.run([npm_cmd, "install"], cwd=str(web_dir), check=True)
 
     print("  🔨 前端源码有更新，正在构建...")
-    subprocess.run(["npm", "run", "build"], cwd=str(web_dir), check=True)
+    subprocess.run([npm_cmd, "run", "build"], cwd=str(web_dir), check=True)
     print("  ✅ 前端构建完成\n")
 
 
@@ -53,6 +56,7 @@ if __name__ == "__main__":
     import os
     import uvicorn
     from dotenv import load_dotenv
+
     load_dotenv()
 
     _build_frontend_if_needed()
