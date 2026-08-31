@@ -357,6 +357,8 @@ class RoundtableRunner:
                     "round": controller.current_round,
                     "full_content": iv.content,
                 })
+                # 干预消息立即落盘，避免崩溃后丢失
+                session.save()
                 logger.info(f"Roundtable {session.session_id} 用户插话: {iv.content[:50]}")
 
             elif iv.intervention_type == "nominate":
@@ -386,6 +388,8 @@ class RoundtableRunner:
                             "round": controller.current_round,
                             "full_content": f"@{target.role_name} {iv.content}",
                         })
+                        # 干预消息立即落盘，避免崩溃后丢失
+                        session.save()
 
                     # 让指定 seat 发言
                     await event_bus.emit_chat({
@@ -1276,8 +1280,13 @@ class RoundtableManager:
         return self.sessions.get(session_id)
 
     def list_all(self) -> list[dict]:
-        """列出所有圆桌会议的摘要"""
-        return [s.get_summary() for s in self.sessions.values()]
+        """列出所有圆桌会议的摘要（按创建时间倒序，最新在前）"""
+        sessions = sorted(
+            self.sessions.values(),
+            key=lambda s: s.created_at,
+            reverse=True,
+        )
+        return [s.get_summary() for s in sessions]
 
     # ============ 持久化加载 ============
 
