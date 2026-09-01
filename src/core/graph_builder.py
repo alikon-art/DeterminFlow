@@ -19,6 +19,7 @@ from src.core.tool_guard import RoundsGuard, make_guarded_wrapper
 
 # 导入 llm_client 以确保 monkey patch 被应用（必须在使用 ChatOpenAI 之前）
 import src.core.llm_client  # noqa: F401
+from src.core.llm_client import LLMEmptyOrMalformedResponse
 
 logger = logging.getLogger(__name__)
 
@@ -147,6 +148,30 @@ def _make_llm_node(llm: BaseChatModel, tools: list[BaseTool]):
             try:
                 response = await llm_with_tools.ainvoke(request_messages)
                 break
+            except LLMEmptyOrMalformedResponse as exc:
+                # The LLM returned a chunk whose content is missing or shaped
+                # in a way LangChain cannot assemble into a BaseMessage. The
+                # call itself succeeded at the HTTP layer, so this is usually
+                # a transient truncation. Drop the oldest message round and
+                # retry once; if compaction cannot shrink further, escalate.
+                logger.warning(
+                    "[LLMEmptyOrMalformedResponse] attempting recovery | "
+                    "session_id=%s agent_type=%s retry=%s/%s",
+                    session_id,
+                    agent_type,
+                    retry_count + 1,
+                    max_retries,
+                )
+                if is_compressor or retry_count >= max_retries:
+                    raise
+                next_messages = reactive_strategy.discard_oldest_round(
+                    request_messages
+                )
+                if next_messages == request_messages:
+                    raise exc
+                retry_count += 1
+                request_messages = next_messages
+                continue
             except Exception as exc:
                 decision = checker.error_check(exc, request_messages)
                 if (
